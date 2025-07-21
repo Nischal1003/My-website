@@ -24,16 +24,14 @@
       margin-right: 20px;
     }
 
-    .title {
-      font-size: 28px;
-      font-weight: bold;
-      color: #333333;
+    .dashboard-container {
+      display: flex;
+      justify-content: center;
     }
 
     .tableauPlaceholder {
-      width: 1000px;
-      height: 660px;
-      margin-top: 10px;
+      width: 1050px;
+      height: 720px;
     }
 
     .tableauViz {
@@ -46,38 +44,39 @@
 
   <div class="header">
     <img src="nlogo.png" alt="Logo" class="logo" />
-    <div class="title">Fab 4 Comparison Dashboard</div>
   </div>
 
-  <div class='tableauPlaceholder' id='viz1753099523245' style='position: relative'>
-    <noscript>
-      <a href='#'>
-        <img alt='Dashboard 1' src='https://public.tableau.com/static/images/Fa/Fabfour/Dashboard1/1_rss.png' style='border: none' />
-      </a>
-    </noscript>
-    <object class='tableauViz' style='display:none;'>
-      <param name='host_url' value='https%3A%2F%2Fpublic.tableau.com%2F' />
-      <param name='embed_code_version' value='3' />
-      <param name='site_root' value='' />
-      <param name='name' value='Fabfour/Dashboard1' />
-      <param name='tabs' value='no' />
-      <param name='toolbar' value='yes' />
-      <param name='static_image' value='https://public.tableau.com/static/images/Fa/Fabfour/Dashboard1/1.png' />
-      <param name='animate_transition' value='yes' />
-      <param name='display_static_image' value='yes' />
-      <param name='display_spinner' value='yes' />
-      <param name='display_overlay' value='yes' />
-      <param name='display_count' value='yes' />
-      <param name='language' value='en-US' />
-      <param name='filter' value='publish=yes' />
-    </object>
+  <div class="dashboard-container">
+    <div class='tableauPlaceholder' id='viz1753099523245' style='position: relative'>
+      <noscript>
+        <a href='#'>
+          <img alt='Dashboard 1' src='https://public.tableau.com/static/images/Fa/Fabfour/Dashboard1/1_rss.png' style='border: none' />
+        </a>
+      </noscript>
+      <object class='tableauViz' style='display:none;'>
+        <param name='host_url' value='https%3A%2F%2Fpublic.tableau.com%2F' />
+        <param name='embed_code_version' value='3' />
+        <param name='site_root' value='' />
+        <param name='name' value='Fabfour/Dashboard1' />
+        <param name='tabs' value='no' />
+        <param name='toolbar' value='yes' />
+        <param name='static_image' value='https://public.tableau.com/static/images/Fa/Fabfour/Dashboard1/1.png' />
+        <param name='animate_transition' value='yes' />
+        <param name='display_static_image' value='yes' />
+        <param name='display_spinner' value='yes' />
+        <param name='display_overlay' value='yes' />
+        <param name='display_count' value='yes' />
+        <param name='language' value='en-US' />
+        <param name='filter' value='publish=yes' />
+      </object>
+    </div>
   </div>
 
   <script type='text/javascript'>
     var divElement = document.getElementById('viz1753099523245');
     var vizElement = divElement.getElementsByTagName('object')[0];
-    vizElement.style.width = '1000px';
-    vizElement.style.height = '660px';
+    vizElement.style.width = '1050px';
+    vizElement.style.height = '720px';
     var scriptElement = document.createElement('script');
     scriptElement.src = 'https://public.tableau.com/javascripts/api/viz_v1.js';
     vizElement.parentNode.insertBefore(scriptElement, vizElement);
