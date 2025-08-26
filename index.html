@@ -12,6 +12,7 @@
     header {
       display: flex;
       align-items: center;
+      justify-content: space-between; /* space between logo and button */
       padding: 10px 20px;
       background-color: #f5f5f5;
       position: fixed;
@@ -23,6 +24,20 @@
     header img {
       height: 40px;
       width: auto;
+    }
+    .dashboard-button {
+      background-color: #003366; /* dark blue */
+      color: #ffffff; /* white text */
+      border: none;
+      padding: 10px 16px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      text-decoration: none;
+    }
+    .dashboard-button:hover {
+      background-color: #002244; /* slightly darker on hover */
     }
     main {
       display: flex;
@@ -53,6 +68,7 @@
 <body>
   <header>
     <img src="nlogo.png" alt="Logo" />
+    <a href="ipl.html" class="dashboard-button">View IPL Dashboard</a>
   </header>
   <main>
     <iframe title="Nischal V Pravesh Scoreboard" width="1024" height="612" src="https://app.powerbi.com/view?r=eyJrIjoiODJiMTA1MzQtZjJkNi00NTU2LTg3YmUtMTljZDRhYmQyMjMzIiwidCI6ImZlODg0M2Q0LTk1ODAtNGYyMi04NGNmLTI1MjFhMjNlMjhkZCJ9&rs:refresh=true" frameborder="0" allowFullScreen="true"></iframe>
