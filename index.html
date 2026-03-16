@@ -365,6 +365,22 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
 /* recurring section divider in task list */
 .task-section-head{padding:8px 18px 6px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px;}
 .task-section-head svg{width:12px;height:12px;opacity:0.6;}
+/* priority badges */
+.prio{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;letter-spacing:0.03em;}
+.prio-critical{background:#FEF2F2;color:#DC2626;border:1px solid rgba(220,38,38,0.25);}
+.prio-high{background:#FFF7ED;color:#EA580C;border:1px solid rgba(234,88,12,0.25);}
+.prio-medium{background:#FFFBEB;color:#B45309;border:1px solid rgba(180,83,9,0.25);}
+.prio-low{background:#F0FDF4;color:#16A34A;border:1px solid rgba(22,163,74,0.25);}
+.prio-none{background:var(--gray-l);color:var(--muted);border:1px solid var(--border2);}
+/* priority task panel */
+.prio-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:20px;}
+.prio-task-row{display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--border);transition:background 0.12s;cursor:pointer;}
+.prio-task-row:last-child{border-bottom:none;}
+.prio-task-row:hover{background:var(--surface2);}
+.prio-left{flex:1;min-width:0;}
+.prio-tname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.prio-proj{font-size:11px;color:var(--muted);margin-top:2px;}
+.prio-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
 /* archive badge */
 .arch-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:3px 9px;border-radius:6px;background:#F5F3FF;color:#7C3AED;border:1px solid rgba(124,58,237,0.2);}
 ::-webkit-scrollbar{width:4px;}
@@ -508,6 +524,27 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
     <!-- PROJECTS -->
     <div class="view" id="view-projects">
       <div id="proj-grid-wrap">
+        <!-- Priority Tasks Panel -->
+        <div class="prio-panel" id="prio-panel" style="display:none;">
+          <div class="ph">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <svg width="15" height="15" fill="none" stroke="#DC2626" stroke-width="2.2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <div class="ph-title">Priority Tasks</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <select id="prio-filter" onchange="renderPriorityPanel()" style="border:1px solid var(--border2);border-radius:7px;padding:5px 28px 5px 10px;font-size:12px;color:var(--text);background:var(--surface);outline:none;cursor:pointer;appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%2210%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%222%22%3E%3Cpolyline points=%226 9 12 15 18 9%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 8px center;">
+                <option value="">All Priorities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+              <div class="ph-badge" id="prio-count">0 tasks</div>
+            </div>
+          </div>
+          <div id="prio-list"></div>
+        </div>
+
         <div class="proj-grid" id="proj-grid"></div>
         <div class="empty-state" id="proj-empty" style="display:none">
           <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
@@ -696,12 +733,23 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
     <div class="fg"><label class="fl">Task Name</label><input class="fi" id="tf-name" placeholder="e.g. Prepare tax documents"/></div>
     <div class="fg"><label class="fl">Description (optional)</label><input class="fi" id="tf-desc" placeholder="Brief description"/></div>
     <div class="fr">
+      <div class="fg"><label class="fl">Priority</label>
+        <select class="fi fsel" id="tf-priority">
+          <option value="none">— None —</option>
+          <option value="low">🟢 Low</option>
+          <option value="medium">🟡 Medium</option>
+          <option value="high">🔴 High</option>
+          <option value="critical">🚨 Critical</option>
+        </select>
+      </div>
       <div class="fg"><label class="fl">Status</label>
         <select class="fi fsel" id="tf-status"><option>Not Started</option><option>In Progress</option><option>Completed</option></select>
       </div>
-      <div class="fg"><label class="fl">Due Date</label><input class="fi" id="tf-due" type="date"/></div>
     </div>
-    <div class="fg"><label class="fl">Completed Date</label><input class="fi" id="tf-cdate" type="date"/></div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Due Date</label><input class="fi" id="tf-due" type="date"/></div>
+      <div class="fg"><label class="fl">Completed Date</label><input class="fi" id="tf-cdate" type="date"/></div>
+    </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:4px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div>
@@ -1124,8 +1172,10 @@ function renderProjectsPage(){
     const ex=p.staff.length>4?`<div class="sav" style="background:#9BA3B2">+${p.staff.length-4}</div>`:'';
     const done=p.tasks?p.tasks.filter(t=>t.status==='Completed').length:0;
     const tot=p.tasks?p.tasks.length:0;
+    // count high priority pending tasks
+    const prioCount=(p.tasks||[]).filter(t=>t.status!=='Completed'&&(t.priority==='critical'||t.priority==='high')).length;
     return `<div class="proj-card" onclick="openDetail(${p.id})">
-      <div class="pc-head"><div class="pc-top"><div><div class="pc-name">${p.name}</div><div class="pc-client">${client?client.name:'No client'}</div></div><span class="stag ${sc(p.status)}">${p.status}</span></div></div>
+      <div class="pc-head"><div class="pc-top"><div><div class="pc-name">${p.name}${prioCount?`<span style="margin-left:6px;font-size:10px;background:var(--red-l);color:var(--red);border:1px solid rgba(220,38,38,0.2);padding:1px 6px;border-radius:20px;font-weight:600">⚠ ${prioCount}</span>`:''}</div><div class="pc-client">${client?client.name:'No client'}</div></div><span class="stag ${sc(p.status)}">${p.status}</span></div></div>
       <div class="pc-body">
         <div class="bar-wrap" style="margin-bottom:12px"><div class="bar-t"><span>Completion (${done}/${tot} tasks)</span><span>${pct}%</span></div><div class="bar" style="height:6px"><div class="bf" style="width:${pct}%;background:${bc(pct)}"></div></div></div>
         <div class="pc-meta">
@@ -1140,6 +1190,70 @@ function renderProjectsPage(){
         </div>
       </div>
     </div>`;}).join('');
+  renderPriorityPanel();
+}
+
+/* ══ PRIORITY PANEL ══ */
+const PRIO_ORDER={critical:0,high:1,medium:2,low:3,none:4};
+const PRIO_LABELS={critical:'🚨 Critical',high:'🔴 High',medium:'🟡 Medium',low:'🟢 Low',none:'— None'};
+const PRIO_CLS={critical:'prio-critical',high:'prio-high',medium:'prio-medium',low:'prio-low',none:'prio-none'};
+
+function renderPriorityPanel(){
+  const panel=document.getElementById('prio-panel');
+  const listEl=document.getElementById('prio-list');
+  const countEl=document.getElementById('prio-count');
+  if(!panel)return;
+  const fPrio=document.getElementById('prio-filter')?.value||'';
+  let items=[];
+  activeProjects().forEach(p=>{
+    (p.tasks||[]).forEach(t=>{
+      if(t.status==='Completed')return;
+      const prio=t.priority||'none';
+      if(prio==='none'&&!fPrio)return;
+      if(fPrio&&prio!==fPrio)return;
+      items.push({t,p});
+    });
+  });
+  items.sort((a,b)=>{
+    const pd=(PRIO_ORDER[a.t.priority||'none']||4)-(PRIO_ORDER[b.t.priority||'none']||4);
+    if(pd!==0)return pd;
+    if(!a.t.due&&!b.t.due)return 0;
+    if(!a.t.due)return 1;
+    if(!b.t.due)return -1;
+    return a.t.due.localeCompare(b.t.due);
+  });
+  panel.style.display=items.length?'block':'none';
+  if(!items.length){if(countEl)countEl.textContent='0 tasks';return;}
+  if(countEl)countEl.textContent=items.length+' task'+(items.length!==1?'s':'');
+  listEl.innerHTML=items.map(({t,p})=>{
+    const prio=t.priority||'none';
+    const cl=gC(p.clientId);
+    const staffAv=(t.staff||[]).slice(0,3).map(sid=>{const s=gS(sid);if(!s)return'';
+      return `<div style="width:20px;height:20px;border-radius:50%;background:${s.c};display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;border:2px solid var(--surface);margin-left:-5px;flex-shrink:0">${ini(s.name)}</div>`;}).join('');
+    const isOverdue=t.due&&t.due<TODAY()&&t.status!=='Completed';
+    const barColor=prio==='critical'?'#DC2626':prio==='high'?'#EA580C':prio==='medium'?'#B45309':'#16A34A';
+    return `<div class="prio-task-row" onclick="openDetail(${p.id})">
+      <div style="width:3px;height:36px;border-radius:3px;background:${barColor};flex-shrink:0;"></div>
+      <div class="prio-left">
+        <div class="prio-tname">${t.name}</div>
+        <div class="prio-proj">${p.name}${cl?' · '+cl.name:''}</div>
+      </div>
+      <div class="prio-right">
+        <span class="prio ${PRIO_CLS[prio]}">${PRIO_LABELS[prio]}</span>
+        ${t.due?`<span style="font-size:11px;font-weight:500;color:${isOverdue?'var(--red)':'var(--muted)'}">${isOverdue?'⚠ Overdue · ':''}${fdShort(t.due)}</span>`:''}
+        <span class="stag ${sc(t.status)}" style="font-size:9px">${t.status}</span>
+        ${staffAv?`<div style="display:flex;margin-left:8px">${staffAv}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setTaskPriority(pid,tid,prio){
+  const p=gP(pid);if(!p)return;
+  const t=(p.tasks||[]).find(x=>x.id===tid);if(!t)return;
+  t.priority=prio;
+  renderPriorityPanel();
+  renderDetail(pid);
 }
 
 /* ══ PROJECT DETAIL ══ */
@@ -1163,6 +1277,12 @@ function renderDetail(pid){
   const recurringTasks=(p.tasks||[]).filter(t=>t.recurring);
   const nonRecurringTasks=(p.tasks||[]).filter(t=>!t.recurring);
 
+  function prioBadge(prio){
+    const map={critical:['prio-critical','🚨 Critical'],high:['prio-high','🔴 High'],medium:['prio-medium','🟡 Medium'],low:['prio-low','🟢 Low'],none:['prio-none','— None']};
+    const[cls,label]=map[prio]||map.none;
+    return `<span class="prio ${cls}">${label}</span>`;
+  }
+
   function renderTaskRow(t){
     const tChips=(t.staff||[]).map(sid=>{const s=gS(sid);if(!s)return'';
       return `<div class="chip"><div class="c-av" style="background:${s.c}">${ini(s.name)}</div>${s.name.split(' ')[0]}<span class="cx" onclick="rmTS(${pid},${t.id},${sid},event)">×</span></div>`;}).join('');
@@ -1180,12 +1300,21 @@ function renderDetail(pid){
           <div>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">
               <div class="task-name" style="${isDone?'text-decoration:line-through;color:var(--muted)':''}">${t.name}</div>
+              ${prioBadge(t.priority||'none')}
               ${recBadge}
             </div>
             ${t.desc?`<div class="task-desc">${t.desc}</div>`:''}
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <select onchange="setTaskPriority(${pid},${t.id},this.value)" title="Set priority"
+            style="border:1px solid var(--border2);border-radius:6px;padding:3px 22px 3px 7px;font-size:11px;color:var(--text2);background:var(--surface);outline:none;cursor:pointer;appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%228%22 height=%228%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%222%22%3E%3Cpolyline points=%226 9 12 15 18 9%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 6px center;">
+            <option value="none" ${(t.priority||'none')==='none'?'selected':''}>None</option>
+            <option value="low" ${t.priority==='low'?'selected':''}>Low</option>
+            <option value="medium" ${t.priority==='medium'?'selected':''}>Medium</option>
+            <option value="high" ${t.priority==='high'?'selected':''}>High</option>
+            <option value="critical" ${t.priority==='critical'?'selected':''}>Critical</option>
+          </select>
           <span class="stag ${sc(t.status)}" style="font-size:9px">${t.status}</span>
           ${t.due?`<span style="font-size:11px;color:var(--muted)">${fdShort(t.due)}</span>`:''}
           ${t.cdate?`<span style="font-size:10px;color:var(--green)">✓ ${fdShort(t.cdate)}</span>`:''}
@@ -1798,6 +1927,7 @@ function openTaskModal(pid){
   document.getElementById('m-task-s').textContent='Project: '+p.name;
   document.getElementById('tf-name').value='';
   document.getElementById('tf-desc').value='';
+  document.getElementById('tf-priority').value='none';
   document.getElementById('tf-status').value='Not Started';
   document.getElementById('tf-due').value='';
   document.getElementById('tf-cdate').value='';
@@ -1820,6 +1950,7 @@ function saveTask(){
   p.tasks.push({
     id:nTid++,name,
     desc:document.getElementById('tf-desc').value.trim(),
+    priority:document.getElementById('tf-priority').value||'none',
     status:document.getElementById('tf-status').value,
     due:document.getElementById('tf-due').value,
     cdate:document.getElementById('tf-cdate').value,
