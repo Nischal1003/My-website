@@ -387,6 +387,26 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
 .divider{height:1px;background:var(--border);margin:12px 0;}
+/* ══ STAFF DETAIL ══ */
+.staff-detail-wrap{display:none;}.staff-detail-wrap.open{display:block;}
+.sd-back{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;margin-bottom:18px;width:fit-content;transition:color 0.14s;background:none;border:none;padding:0;}
+.sd-back:hover{color:var(--text);}
+.sd-head{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:22px 24px;margin-bottom:16px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
+.sd-av{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0;}
+.sd-info{flex:1;min-width:200px;}
+.sd-name{font-size:20px;font-weight:700;}
+.sd-role{font-size:13px;color:var(--muted);margin-top:3px;}
+.sd-meta{display:flex;gap:24px;margin-top:10px;flex-wrap:wrap;}
+.sd-mt{display:flex;flex-direction:column;gap:2px;}
+.sd-mt span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+.sd-mt b{font-size:14px;font-weight:600;}
+.sd-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:700px){.sd-grid{grid-template-columns:1fr;}}
+.sd-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;}
+.sd-task-row{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:10px;transition:background 0.12s;}
+.sd-task-row:last-child{border-bottom:none;}
+.sd-task-row:hover{background:var(--surface2);}
+.sd-done{opacity:0.55;}
 </style>
 </head>
 <body>
@@ -565,6 +585,9 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
       </div>
       <div class="cd-wrap" id="client-detail"></div>
     </div>
+
+    <!-- STAFF DETAIL -->
+    <div class="staff-detail-wrap" id="staff-detail"></div>
 
     <!-- STAFF -->
     <div class="view" id="view-staff">
@@ -1784,7 +1807,7 @@ function renderStaffPage(){
     const typeBadge=s.type&&s.type!=='Full-time'
       ?`<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--gold-l);color:var(--gold);border:1px solid rgba(180,83,9,0.2);margin-left:5px">${s.type}</span>`:'';
     const joined=s.joined?`<div style="font-size:10.5px;color:var(--muted2);margin-top:1px">Since ${fdShort(s.joined)}</div>`:'';
-    return `<tr>
+    return `<tr style="cursor:pointer" onclick="openStaffDetail(${s.id})">
       <td>
         <div style="display:flex;align-items:center;gap:10px">
           <div class="sav" style="background:${s.c};width:36px;height:36px;font-size:12px;flex-shrink:0">${ini(s.name)}</div>
@@ -1820,6 +1843,112 @@ function renderStaffPage(){
       </td>
     </tr>`;
   }).join('');
+}
+
+/* ════════════════════ STAFF DETAIL VIEW ════════════════════ */
+function openStaffDetail(sid){
+  const s=gS(sid);if(!s)return;
+  document.getElementById('view-staff').style.display='none';
+  const wrap=document.getElementById('staff-detail');
+  wrap.classList.add('open');
+
+  let memberTasks=[];
+  let reviewerTasks=[];
+  PROJECTS.forEach(p=>{
+    (p.tasks||[]).forEach(t=>{
+      const isMember=(t.members||[]).includes(sid)||(!(t.members||[]).length&&!(t.reviewers||[]).length&&(t.staff||[]).includes(sid));
+      const isReviewer=(t.reviewers||[]).includes(sid);
+      if(isMember)memberTasks.push({t,p});
+      if(isReviewer)reviewerTasks.push({t,p});
+    });
+  });
+
+  const mTotal=memberTasks.length;
+  const mDone=memberTasks.filter(({t})=>t.status==='Completed').length;
+  const rTotal=reviewerTasks.length;
+  const rDone=reviewerTasks.filter(({t})=>t.status==='Completed').length;
+  const activeCount=tCount(sid);
+
+  function taskRow({t,p}){
+    const isDone=t.status==='Completed';
+    const client=gC(p.clientId);
+    const prio=t.priority||'none';
+    const PRIO_CLS={critical:'prio-critical',high:'prio-high',medium:'prio-medium',low:'prio-low',none:'prio-none'};
+    const PRIO_LABELS={critical:'🚨 Critical',high:'🔴 High',medium:'🟡 Medium',low:'🟢 Low',none:''};
+    return `<div class="sd-task-row ${isDone?'sd-done':''}">
+      <div class="task-check ${isDone?'checked':''}" style="margin-top:2px;flex-shrink:0">
+        ${isDone?`<svg fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`:''}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;${isDone?'text-decoration:line-through;color:var(--muted)':''}">${t.name}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${p.name}${client?' · '+client.name:''}</div>
+        <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center">
+          ${prio!=='none'?`<span class="prio ${PRIO_CLS[prio]}">${PRIO_LABELS[prio]}</span>`:''}
+          <span class="stag ${sc(t.status)}" style="font-size:9px">${t.status}</span>
+          ${t.due?`<span style="font-size:11px;color:var(--muted)">${fdShort(t.due)}</span>`:''}
+          ${isDone&&t.cdate?`<span style="font-size:10px;color:var(--green)">✓ ${fdShort(t.cdate)}</span>`:''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function sectionHTML(title,emoji,color,tasks,done,total){
+    const pct=total>0?Math.round(done/total*100):0;
+    return `<div class="sd-section">
+      <div class="ph">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="font-size:15px">${emoji}</span>
+          <div class="ph-title">${title}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px;font-weight:600;color:${color}">${done}/${total} done</span>
+          <div class="ph-badge">${pct}%</div>
+        </div>
+      </div>
+      ${total>0?`<div class="bar" style="height:4px;border-radius:0"><div class="bf" style="width:${pct}%;background:${color}"></div></div>`:''}
+      ${tasks.length?tasks.map(taskRow).join(''):'<div class="empty-state" style="padding:24px"><p>No tasks in this role.</p></div>'}
+    </div>`;
+  }
+
+  const typeTag=s.type&&s.type!=='Full-time'
+    ?`<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--gold-l);color:var(--gold);border:1px solid rgba(180,83,9,0.2);margin-left:8px">${s.type}</span>`:'';
+  const loadColor=activeCount===0?'var(--green)':activeCount>=4?'var(--red)':'var(--orange)';
+  const loadLabel=activeCount===0?'Available':activeCount>=4?'Overloaded':'Active';
+
+  wrap.innerHTML=`
+    <button class="sd-back" onclick="closeStaffDetail()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>Back to Staff
+    </button>
+    <div class="sd-head">
+      <div class="sd-av" style="background:${s.c}">${ini(s.name)}</div>
+      <div class="sd-info">
+        <div class="sd-name">${s.name}${typeTag}</div>
+        <div class="sd-role">${s.role}${s.dept?' · '+s.dept:''}</div>
+        <div class="sd-meta">
+          <div class="sd-mt"><span>Status</span><b style="color:${loadColor}">${loadLabel} · ${activeCount} active task${activeCount!==1?'s':''}</b></div>
+          ${s.email?`<div class="sd-mt"><span>Email</span><b style="font-size:12px">${s.email}</b></div>`:''}
+          ${s.phone?`<div class="sd-mt"><span>Phone</span><b style="font-size:12px">${s.phone}</b></div>`:''}
+          ${s.joined?`<div class="sd-mt"><span>Joined</span><b>${fdShort(s.joined)}</b></div>`:''}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;text-align:center;flex-shrink:0;background:var(--surface2);border:1px solid var(--border);border-radius:var(--rl);padding:16px 20px;">
+        <div style="font-size:28px;font-weight:700;color:var(--accent)">${mTotal+rTotal}</div>
+        <div style="font-size:11px;color:var(--muted)">Total tasks</div>
+        <div style="height:1px;background:var(--border);margin:4px 0;"></div>
+        <div style="font-size:13px;font-weight:600;color:var(--green)">${mDone+rDone} completed</div>
+        <div style="font-size:12px;color:var(--orange)">${activeCount} active</div>
+      </div>
+    </div>
+    <div class="sd-grid">
+      ${sectionHTML('As Member','👤','#2563EB',memberTasks,mDone,mTotal)}
+      ${sectionHTML('As Reviewer','👁','#7C3AED',reviewerTasks,rDone,rTotal)}
+    </div>`;
+}
+
+function closeStaffDetail(){
+  document.getElementById('staff-detail').classList.remove('open');
+  document.getElementById('staff-detail').innerHTML='';
+  document.getElementById('view-staff').style.display='';
 }
 
 /* ════════════════════ STAFF CRUD ════════════════════ */
