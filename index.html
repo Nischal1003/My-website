@@ -697,8 +697,24 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
 
 <!-- Assign staff to task -->
 <div class="overlay" id="m-at"><div class="modal">
-  <div class="mh"><div class="mt">Assign Staff to Task</div><div class="ms" id="m-at-sub"></div></div>
+  <div class="mh">
+    <div class="mt">Assign Staff to Task</div>
+    <div class="ms" id="m-at-sub"></div>
+    <div style="display:flex;gap:0;margin-top:12px;border:1px solid var(--border2);border-radius:8px;overflow:hidden;width:fit-content;">
+      <button id="at-tab-member" onclick="setATTab('member')"
+        style="padding:6px 18px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:#EFF4FF;color:#2563EB;transition:all 0.12s;">
+        👤 Member
+      </button>
+      <button id="at-tab-reviewer" onclick="setATTab('reviewer')"
+        style="padding:6px 18px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--surface);color:var(--muted);transition:all 0.12s;">
+        👁 Reviewer
+      </button>
+    </div>
+  </div>
   <div class="mb" id="m-at-body"></div>
+  <div style="padding:8px 24px;background:var(--surface2);border-top:1px solid var(--border);font-size:11px;color:var(--muted)">
+    <b>Member</b> = works on the task · <b>Reviewer</b> = reviews/approves the output
+  </div>
   <div class="mf"><button class="btn-secondary" onclick="closeM('m-at')">Done</button></div>
 </div></div>
 
@@ -721,6 +737,7 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
 <!-- New/Edit Task -->
 <div class="overlay" id="m-task"><div class="modal sm">
   <div class="mh"><div class="mt" id="m-task-t">Add Task</div><div class="ms" id="m-task-s"></div></div>
+  <input type="hidden" id="tf-tid" value=""/>
   <div class="mb">
     <div class="fg"><label class="fl">Task Name</label><input class="fi" id="tf-name" placeholder="e.g. Prepare tax documents"/></div>
     <div class="fg"><label class="fl">Description (optional)</label><input class="fi" id="tf-desc" placeholder="Brief description"/></div>
@@ -1066,8 +1083,33 @@ function sc(s){
 const activeProjects=()=>PROJECTS;
 const backlogProjects=()=>[];
 
-function tCount(sid){let n=0;PROJECTS.forEach(p=>p.tasks&&p.tasks.forEach(t=>{if(t.staff&&t.staff.includes(sid))n++;}));return n;}
-function tList(sid){let l=[];PROJECTS.forEach(p=>p.tasks&&p.tasks.forEach(t=>{if(t.staff&&t.staff.includes(sid))l.push({proj:p.name,task:t.name});}));return l;}
+// Returns count of ACTIVE (non-completed) tasks where sid is member or reviewer
+function tCount(sid){
+  let n=0;
+  PROJECTS.forEach(p=>p.tasks&&p.tasks.forEach(t=>{
+    if(t.status==='Completed')return; // released on completion
+    const inMembers=(t.members||[]).includes(sid);
+    const inReviewers=(t.reviewers||[]).includes(sid);
+    // legacy: also check t.staff for backward compat
+    const inStaff=(t.staff||[]).includes(sid)&&!inMembers&&!inReviewers;
+    if(inMembers||inReviewers||inStaff)n++;
+  }));
+  return n;
+}
+// Returns list of active task assignments with role label
+function tList(sid){
+  let l=[];
+  PROJECTS.forEach(p=>p.tasks&&p.tasks.forEach(t=>{
+    if(t.status==='Completed')return;
+    const inMembers=(t.members||[]).includes(sid);
+    const inReviewers=(t.reviewers||[]).includes(sid);
+    const inStaff=(t.staff||[]).includes(sid)&&!inMembers&&!inReviewers;
+    if(inMembers)l.push({proj:p.name,task:t.name,role:'Member'});
+    else if(inReviewers)l.push({proj:p.name,task:t.name,role:'Reviewer'});
+    else if(inStaff)l.push({proj:p.name,task:t.name,role:'Assigned'});
+  }));
+  return l;
+}
 
 /* ════════════════════ NAV ════════════════════ */
 let curView='overview',detailPid=null,detailCid=null;
@@ -1286,8 +1328,19 @@ function renderDetail(pid){
   }
 
   function renderTaskRow(t){
-    const tChips=(t.staff||[]).map(sid=>{const s=gS(sid);if(!s)return'';
+    if(!t.members)t.members=[];
+    if(!t.reviewers)t.reviewers=[];
+    // Build chips for members
+    const memberChips=t.members.map(sid=>{const s=gS(sid);if(!s)return'';
+      return `<div class="chip" style="background:#EFF4FF;border-color:rgba(37,99,235,0.2)"><div class="c-av" style="background:${s.c}">${ini(s.name)}</div><span style="color:#2563EB;font-size:9px;font-weight:700">M</span> ${s.name.split(' ')[0]}<span class="cx" onclick="rmTS(${pid},${t.id},${sid},event)">×</span></div>`;}).join('');
+    // Build chips for reviewers
+    const reviewerChips=t.reviewers.map(sid=>{const s=gS(sid);if(!s)return'';
+      return `<div class="chip" style="background:#F5F3FF;border-color:rgba(124,58,237,0.2)"><div class="c-av" style="background:${s.c}">${ini(s.name)}</div><span style="color:#7C3AED;font-size:9px;font-weight:700">R</span> ${s.name.split(' ')[0]}<span class="cx" onclick="rmTS(${pid},${t.id},${sid},event)">×</span></div>`;}).join('');
+    // Legacy staff chips (old data without members/reviewers)
+    const legacyIds=(t.staff||[]).filter(sid=>!t.members.includes(sid)&&!t.reviewers.includes(sid));
+    const legacyChips=legacyIds.map(sid=>{const s=gS(sid);if(!s)return'';
       return `<div class="chip"><div class="c-av" style="background:${s.c}">${ini(s.name)}</div>${s.name.split(' ')[0]}<span class="cx" onclick="rmTS(${pid},${t.id},${sid},event)">×</span></div>`;}).join('');
+    const allChips=memberChips+reviewerChips+legacyChips;
     const isDone=t.status==='Completed';
     const freqLabel={daily:'Daily',weekdays:'Weekdays',weekly:'Weekly',monthly:'Monthly'};
     const recBadge=t.recurring
@@ -1320,12 +1373,13 @@ function renderDetail(pid){
           <span class="stag ${sc(t.status)}" style="font-size:9px">${t.status}</span>
           ${t.due?`<span style="font-size:11px;color:var(--muted)">${fdShort(t.due)}</span>`:''}
           ${t.cdate?`<span style="font-size:10px;color:var(--green)">✓ ${fdShort(t.cdate)}</span>`:''}
+          <button class="icon-btn edit" onclick="openTaskModal(${pid},${t.id})" title="Edit task"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
           ${!t.recurring?`<button class="icon-btn" onclick="confirmDel('Delete this task?',()=>{const p=gP(${pid});p.tasks=p.tasks.filter(x=>x.id!==${t.id});renderAll();renderDetail(${pid});})"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>`:''}
         </div>
       </div>
       <div class="task-bottom">
-        <div class="task-chips">${tChips}</div>
-        <button class="t-assign-btn" onclick="openAssignTask(${pid},${t.id})">+ Assign Staff</button>
+        <div class="task-chips">${allChips||''}</div>
+        <button class="t-assign-btn" onclick="openAssignTask(${pid},${t.id})">+ Assign</button>
       </div>
     </div>`;
   }
@@ -1387,10 +1441,17 @@ function renderDetail(pid){
           <div class="ph"><div class="ph-title">Project Staff</div></div>
           ${p.staff.length===0?'<div class="empty-state" style="padding:24px"><p>No staff assigned yet.</p></div>':
           p.staff.map(sid=>{const s=gS(sid);if(!s)return'';
-            const mt=(p.tasks||[]).filter(t=>t.staff&&t.staff.includes(sid));
+            // Count active tasks by role
+            const activeTasks=(p.tasks||[]).filter(t=>t.status!=='Completed');
+            const asMember=activeTasks.filter(t=>(t.members||[]).includes(sid)||(!(t.members||[]).length&&!(t.reviewers||[]).length&&(t.staff||[]).includes(sid)));
+            const asReviewer=activeTasks.filter(t=>(t.reviewers||[]).includes(sid));
+            const total=asMember.length+asReviewer.length;
+            const roleLabel=total===0?'<span style="color:var(--green);font-size:10px">Free</span>':
+              [asMember.length>0?`<span style="color:#2563EB;font-size:10px">👤 ${asMember.length}m</span>`:'',
+               asReviewer.length>0?`<span style="color:#7C3AED;font-size:10px">👁 ${asReviewer.length}r</span>`:''].filter(Boolean).join(' ');
             return `<div class="si"><div class="sav" style="background:${s.c}">${ini(s.name)}</div>
               <div class="si-info"><div class="si-name">${s.name}</div><div class="si-role">${s.role}</div></div>
-              <div style="font-size:11px;color:var(--muted);text-align:right">${mt.length} task${mt.length!==1?'s':''}</div>
+              <div style="text-align:right;display:flex;flex-direction:column;gap:2px;align-items:flex-end">${roleLabel}</div>
             </div>`;}).join('')}
         </div>
       </div>
@@ -1401,8 +1462,10 @@ function renderDetail(pid){
 function toggleTaskDone(pid,tid){
   const p=gP(pid);const t=p.tasks.find(x=>x.id===tid);
   if(t.status==='Completed'){
+    // Reopen — restore staff to active allocation
     t.status='In Progress';t.cdate='';
   } else {
+    // Complete — staff auto-released (tCount skips completed tasks)
     t.status='Completed';
     t.cdate=t.cdate||TODAY();
     if(t.recurring) t.lastReset=TODAY();
@@ -1581,8 +1644,14 @@ function renderStaffPage(){
       :n>=4
       ?'<span style="color:#DC2626;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#DC2626;display:inline-block"></span>Overloaded</span>'
       :'<span style="color:#EA580C;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#EA580C;display:inline-block"></span>Active</span>';
-    const pills=tasks.slice(0,2).map(t=>`<span class="task-pill" title="${t.proj}: ${t.task}">${t.task}</span>`).join('');
+    const pills=tasks.slice(0,2).map(t=>{
+      const roleColor=t.role==='Reviewer'?'#7C3AED':t.role==='Member'?'#2563EB':'#6B7385';
+      const roleBg=t.role==='Reviewer'?'#F5F3FF':t.role==='Member'?'#EFF4FF':'#F3F4F6';
+      return `<span class="task-pill" title="${t.proj}: ${t.task} (${t.role})" style="background:${roleBg};color:${roleColor}">${t.task} <span style="font-size:9px;opacity:0.75">${t.role==='Reviewer'?'👁':'👤'}</span></span>`;
+    }).join('');
     const more=tasks.length>2?`<span class="task-pill" style="background:var(--gray-l);color:var(--muted)">+${tasks.length-2}</span>`:'';
+    const mCount=tasks.filter(t=>t.role==='Member').length;
+    const rCount=tasks.filter(t=>t.role==='Reviewer').length;
     const typeBadge=s.type&&s.type!=='Full-time'
       ?`<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--gold-l);color:var(--gold);border:1px solid rgba(180,83,9,0.2);margin-left:5px">${s.type}</span>`:'';
     const joined=s.joined?`<div style="font-size:10.5px;color:var(--muted2);margin-top:1px">Since ${fdShort(s.joined)}</div>`:'';
@@ -1607,6 +1676,7 @@ function renderStaffPage(){
           <div class="wb"><div class="wbf" style="width:${wpct}%;background:${wc}"></div></div>
           <span style="font-size:11px;color:var(--muted);min-width:14px">${n}</span>
         </div>
+        ${n>0?`<div style="font-size:10px;color:var(--muted);margin-top:3px;display:flex;gap:6px">${mCount>0?`<span style="color:#2563EB">👤 ${mCount}m</span>`:''} ${rCount>0?`<span style="color:#7C3AED">👁 ${rCount}r</span>`:''}</div>`:''}
       </td>
       <td>${ll}</td>
       <td>
@@ -1704,10 +1774,14 @@ function deleteStaff(sid){
     ?`Remove ${s.name}? They have ${taskCount} active task${taskCount>1?'s':''} assigned. They will be unassigned from all tasks and projects.`
     :`Remove ${s.name} from the team?`;
   confirmDel(msg,()=>{
-    // Remove from all project staff lists and task staff lists
+    // Remove from all project staff lists, task members, reviewers, and legacy staff
     PROJECTS.forEach(p=>{
       p.staff=p.staff.filter(id=>id!==sid);
-      if(p.tasks) p.tasks.forEach(t=>{t.staff=(t.staff||[]).filter(id=>id!==sid);});
+      if(p.tasks) p.tasks.forEach(t=>{
+        t.staff=(t.staff||[]).filter(id=>id!==sid);
+        t.members=(t.members||[]).filter(id=>id!==sid);
+        t.reviewers=(t.reviewers||[]).filter(id=>id!==sid);
+      });
     });
     STAFF=STAFF.filter(s=>s.id!==sid);
     showToast(`${s.name} removed from the team`);
@@ -1851,28 +1925,91 @@ function renderAPBody(){
 function togglePS(pid,sid){const p=gP(pid);if(!p.staff.includes(sid)){p.staff.push(sid);renderAll();renderAPBody();if(detailPid===pid)renderDetail(pid);}}
 function rmPS(pid,sid,e){if(e)e.stopPropagation();const p=gP(pid);p.staff=p.staff.filter(id=>id!==sid);renderAll();if(detailPid===pid)renderDetail(pid);}
 
-/* Assign task staff */
-let atPid=null,atTid=null;
-function openAssignTask(pid,tid){atPid=pid;atTid=tid;const p=gP(pid);const t=p.tasks.find(x=>x.id===tid);document.getElementById('m-at-sub').textContent=t.name+' · '+p.name;renderATBody();openM('m-at');}
+/* Assign task staff — Member / Reviewer tabs */
+let atPid=null,atTid=null,atTab='member';
+
+function setATTab(tab){
+  atTab=tab;
+  const mb=document.getElementById('at-tab-member');
+  const rb=document.getElementById('at-tab-reviewer');
+  if(mb&&rb){
+    mb.style.background=tab==='member'?'#EFF4FF':'var(--surface)';
+    mb.style.color=tab==='member'?'#2563EB':'var(--muted)';
+    rb.style.background=tab==='reviewer'?'#F5F3FF':'var(--surface)';
+    rb.style.color=tab==='reviewer'?'#7C3AED':'var(--muted)';
+  }
+  renderATBody();
+}
+
+function openAssignTask(pid,tid){
+  atPid=pid;atTid=tid;atTab='member';
+  const p=gP(pid);const t=p.tasks.find(x=>x.id===tid);
+  document.getElementById('m-at-sub').textContent=t.name+' · '+p.name;
+  setATTab('member');
+  renderATBody();
+  openM('m-at');
+}
+
 function renderATBody(){
   const p=gP(atPid);const t=p.tasks.find(x=>x.id===atTid);
+  if(!t)return;
+  if(!t.members)t.members=[];
+  if(!t.reviewers)t.reviewers=[];
+
   document.getElementById('m-at-body').innerHTML=STAFF.map(s=>{
-    const already=t.staff&&t.staff.includes(s.id);const n=tCount(s.id);
-    const lc=already?'#16A34A':n===0?'#16A34A':n>=4?'#DC2626':'#EA580C';
-    const ll=already?'✓ Assigned':n===0?'Available':n>=4?'Overloaded':`${n} tasks`;
-    return `<div class="mrow ${already?'done':''}" onclick="toggleTS(${atPid},${atTid},${s.id})">
+    const isMember=t.members.includes(s.id);
+    const isReviewer=t.reviewers.includes(s.id);
+    const isActive=atTab==='member'?isMember:isReviewer;
+    const otherRole=atTab==='member'?isReviewer:isMember;
+    const n=tCount(s.id);
+    const lc=isActive?'#16A34A':n===0?'#16A34A':n>=4?'#DC2626':'#EA580C';
+    const otherLabel=otherRole?(atTab==='member'?' · 👁 Reviewer':' · 👤 Member'):'';
+    const ll=isActive?(atTab==='member'?'✓ Member':'✓ Reviewer'):n===0?'Available':n>=4?`Overloaded (${n})`:`${n} active task${n!==1?'s':''}`;
+    return `<div class="mrow ${isActive?'done':''}" onclick="toggleTS(${atPid},${atTid},${s.id})">
       <div class="sav" style="background:${s.c};width:32px;height:32px;font-size:11px">${ini(s.name)}</div>
-      <div class="mr-info"><div class="mr-name">${s.name}</div><div class="mr-role">${s.role}</div></div>
+      <div class="mr-info">
+        <div class="mr-name">${s.name}${otherLabel?`<span style="font-size:10px;color:var(--muted)">${otherLabel}</span>`:''}</div>
+        <div class="mr-role">${s.role}</div>
+      </div>
       <span class="mr-status" style="color:${lc}">${ll}</span>
-    </div>`;}).join('');
+    </div>`;
+  }).join('');
 }
+
 function toggleTS(pid,tid,sid){
   const p=gP(pid);const t=p.tasks.find(x=>x.id===tid);
+  if(!t.members)t.members=[];
+  if(!t.reviewers)t.reviewers=[];
   if(!t.staff)t.staff=[];
-  if(!t.staff.includes(sid)){t.staff.push(sid);if(!p.staff.includes(sid))p.staff.push(sid);}
+
+  if(atTab==='member'){
+    if(t.members.includes(sid)){
+      t.members=t.members.filter(id=>id!==sid); // unassign
+    } else {
+      t.members.push(sid);
+      // Auto-add to project staff list
+      if(!p.staff.includes(sid))p.staff.push(sid);
+    }
+  } else {
+    if(t.reviewers.includes(sid)){
+      t.reviewers=t.reviewers.filter(id=>id!==sid);
+    } else {
+      t.reviewers.push(sid);
+      if(!p.staff.includes(sid))p.staff.push(sid);
+    }
+  }
   renderAll();renderATBody();if(detailPid===pid)renderDetail(pid);
 }
-function rmTS(pid,tid,sid,e){if(e)e.stopPropagation();const p=gP(pid);const t=p.tasks.find(x=>x.id===tid);if(t.staff)t.staff=t.staff.filter(id=>id!==sid);renderAll();if(detailPid===pid)renderDetail(pid);}
+
+// Remove from both roles
+function rmTS(pid,tid,sid,e){
+  if(e)e.stopPropagation();
+  const p=gP(pid);const t=p.tasks.find(x=>x.id===tid);
+  if(t.members)t.members=t.members.filter(id=>id!==sid);
+  if(t.reviewers)t.reviewers=t.reviewers.filter(id=>id!==sid);
+  if(t.staff)t.staff=t.staff.filter(id=>id!==sid);
+  renderAll();if(detailPid===pid)renderDetail(pid);
+}
 
 /* Project modal */
 let ePid=null;
@@ -1899,46 +2036,89 @@ function saveProj(){
   if(ePid&&detailPid===ePid)renderDetail(ePid);
 }
 
-/* Task modal */
-let tPid=null;
-function openTaskModal(pid){
-  tPid=pid;const p=gP(pid);
-  document.getElementById('m-task-t').textContent='Add Task';
-  document.getElementById('m-task-s').textContent='Project: '+p.name;
-  document.getElementById('tf-name').value='';
-  document.getElementById('tf-desc').value='';
-  document.getElementById('tf-priority').value='none';
-  document.getElementById('tf-status').value='Not Started';
-  document.getElementById('tf-due').value='';
-  document.getElementById('tf-cdate').value='';
-  document.getElementById('tf-recurring').checked=false;
-  document.getElementById('tf-freq').value='daily';
+/* Task modal — supports both Add and Edit */
+let tPid=null,tTid=null; // tTid = task id being edited (null = new task)
+
+function openTaskModal(pid, tid){
+  tPid=pid; tTid=tid||null;
+  const p=gP(pid);
+  document.getElementById('tf-tid').value=tid||'';
+  if(tid){
+    // Edit existing task
+    const t=p.tasks.find(x=>x.id===tid);
+    if(!t)return;
+    document.getElementById('m-task-t').textContent='Edit Task';
+    document.getElementById('m-task-s').textContent='Project: '+p.name;
+    document.getElementById('tf-name').value=t.name;
+    document.getElementById('tf-desc').value=t.desc||'';
+    document.getElementById('tf-priority').value=t.priority||'none';
+    document.getElementById('tf-status').value=t.status||'Not Started';
+    document.getElementById('tf-due').value=t.due||'';
+    document.getElementById('tf-cdate').value=t.cdate||'';
+    document.getElementById('tf-recurring').checked=!!t.recurring;
+    document.getElementById('tf-freq').value=t.freq||'daily';
+  } else {
+    // New task
+    document.getElementById('m-task-t').textContent='Add Task';
+    document.getElementById('m-task-s').textContent='Project: '+p.name;
+    document.getElementById('tf-name').value='';
+    document.getElementById('tf-desc').value='';
+    document.getElementById('tf-priority').value='none';
+    document.getElementById('tf-status').value='Not Started';
+    document.getElementById('tf-due').value='';
+    document.getElementById('tf-cdate').value='';
+    document.getElementById('tf-recurring').checked=false;
+    document.getElementById('tf-freq').value='daily';
+  }
   toggleRecurringUI();
   openM('m-task');
 }
+
 function toggleRecurringUI(){
   const checked=document.getElementById('tf-recurring').checked;
   document.getElementById('tf-rec-options').style.display=checked?'block':'none';
   document.getElementById('tf-rec-track').style.background=checked?'#2563EB':'';
   document.getElementById('tf-rec-thumb').style.transform=checked?'translateX(16px)':'translateX(0)';
 }
+
 function saveTask(){
   const name=document.getElementById('tf-name').value.trim();
   if(!name){alert('Task name is required.');return;}
   const p=gP(tPid);if(!p.tasks)p.tasks=[];
   const rec=document.getElementById('tf-recurring').checked;
-  p.tasks.push({
-    id:nTid++,name,
-    desc:document.getElementById('tf-desc').value.trim(),
-    priority:document.getElementById('tf-priority').value||'none',
-    status:document.getElementById('tf-status').value,
-    due:document.getElementById('tf-due').value,
-    cdate:document.getElementById('tf-cdate').value,
-    staff:[],
-    recurring:rec,
-    freq:rec?document.getElementById('tf-freq').value:'',
-    lastReset:rec?TODAY():'',
-  });
+  const editingTid=parseInt(document.getElementById('tf-tid').value)||null;
+
+  if(editingTid){
+    // Update existing task
+    const t=p.tasks.find(x=>x.id===editingTid);
+    if(t){
+      t.name=name;
+      t.desc=document.getElementById('tf-desc').value.trim();
+      t.priority=document.getElementById('tf-priority').value||'none';
+      t.status=document.getElementById('tf-status').value;
+      t.due=document.getElementById('tf-due').value;
+      t.cdate=document.getElementById('tf-cdate').value;
+      t.recurring=rec;
+      t.freq=rec?document.getElementById('tf-freq').value:'';
+      if(rec&&!t.lastReset)t.lastReset=TODAY();
+    }
+  } else {
+    // Add new task
+    p.tasks.push({
+      id:nTid++,name,
+      desc:document.getElementById('tf-desc').value.trim(),
+      priority:document.getElementById('tf-priority').value||'none',
+      status:document.getElementById('tf-status').value,
+      due:document.getElementById('tf-due').value,
+      cdate:document.getElementById('tf-cdate').value,
+      members:[],
+      reviewers:[],
+      staff:[], // legacy compat
+      recurring:rec,
+      freq:rec?document.getElementById('tf-freq').value:'',
+      lastReset:rec?TODAY():'',
+    });
+  }
   closeM('m-task');renderAll();if(detailPid===tPid)renderDetail(tPid);
 }
 
