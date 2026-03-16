@@ -1009,9 +1009,28 @@ function togglePwdVisibility(){
     :'<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
 }
 
-function showDashboard(){
+async function showDashboard(){
   document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('dashboard').style.display='';
+  // Show loading overlay while fetching data
+  const loadingEl=document.createElement('div');
+  loadingEl.id='post-login-loader';
+  loadingEl.style.cssText='position:fixed;inset:0;background:#0A0F1E;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;gap:14px;';
+  loadingEl.innerHTML=`
+    <img src="https://infinconsultants.com/_next/image?url=%2Finfinlogowhite.png&w=640&q=75" style="height:38px;opacity:0.9;" onerror="this.style.display='none'"/>
+    <div style="color:rgba(255,255,255,0.4);font-size:13px;">Loading your workspace…</div>
+    <div style="width:120px;height:3px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+      <div id="pll-bar" style="width:0%;height:100%;background:#2563EB;border-radius:3px;transition:width 0.5s;"></div>
+    </div>`;
+  document.body.appendChild(loadingEl);
+  setTimeout(()=>{const b=document.getElementById('pll-bar');if(b)b.style.width='60%';},100);
+  await loadData();
+  setTimeout(()=>{const b=document.getElementById('pll-bar');if(b)b.style.width='100%';},100);
+  setTimeout(()=>{
+    loadingEl.remove();
+    document.getElementById('dashboard').style.display='';
+    checkAndRunRolloverOnLoad();
+    go('overview');
+  },300);
 }
 
 function signOut(){
@@ -1045,6 +1064,115 @@ let PROJECTS=[];
 /* Archived projects */
 let ARCHIVED=[];
 let nAid=1;
+
+/* ════════════════════ SUPABASE PERSISTENCE ════════════════════
+   All data syncs to Supabase — works across all devices.
+   Falls back to localStorage if Supabase is unreachable.
+════════════════════════════════════════════════════════════════════ */
+const SB_URL   = 'https://xrepjbqwstkqfztjxqsq.supabase.co';
+const SB_KEY   = 'sb_publishable_3HSsDekMnLLNSeFyKyINxQ_-omWhguz';
+const SB_TABLE = 'xinfin_data';
+const SB_ROW   = 'xinfin_ops'; // single row key — all data in one record
+const LS_KEY   = 'xinfin_data'; // local cache / fallback
+
+/* ── Show/hide a subtle sync indicator in the topbar ── */
+function setSyncStatus(state){
+  // state: 'saving' | 'saved' | 'error' | 'loading'
+  let el=document.getElementById('sync-status');
+  if(!el){
+    el=document.createElement('div');
+    el.id='sync-status';
+    el.style.cssText='font-size:11px;padding:4px 10px;border-radius:20px;font-weight:500;transition:all 0.3s;';
+    const tr=document.querySelector('.t-right');
+    if(tr)tr.insertBefore(el,tr.firstChild);
+  }
+  if(state==='saving'){el.textContent='⏳ Saving…';el.style.cssText+=';color:#B45309;background:#FFFBEB;';}
+  else if(state==='saved'){el.textContent='✓ Saved';el.style.cssText+=';color:#16A34A;background:#F0FDF4;';setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400);},2000);}
+  else if(state==='error'){el.textContent='⚠ Offline — saved locally';el.style.cssText+=';color:#DC2626;background:#FEF2F2;';setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400);},4000);}
+  else if(state==='loading'){el.textContent='⏳ Loading…';el.style.cssText+=';color:#2563EB;background:#EFF4FF;';}
+}
+
+/* ── Save to Supabase (upsert single row), cache locally too ── */
+async function saveData(){
+  const payload={
+    STAFF,CLIENTS,PROJECTS,ARCHIVED,
+    nSid,nCid,nPid,nTid,nAid
+  };
+  // Always write to localStorage as instant cache
+  try{localStorage.setItem(LS_KEY,JSON.stringify(payload));}catch(e){}
+
+  setSyncStatus('saving');
+  try{
+    const res=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}`,{
+      method:'POST',
+      headers:{
+        'apikey':SB_KEY,
+        'Authorization':'Bearer '+SB_KEY,
+        'Content-Type':'application/json',
+        'Prefer':'resolution=merge-duplicates',
+      },
+      body:JSON.stringify({id:SB_ROW,data:payload}),
+    });
+    if(!res.ok){const t=await res.text();throw new Error(t);}
+    setSyncStatus('saved');
+    console.log('[XInfin] Saved to Supabase.');
+  }catch(e){
+    setSyncStatus('error');
+    console.warn('[XInfin] Supabase save failed, using local cache:',e);
+  }
+}
+
+/* ── Load from Supabase; fall back to localStorage ── */
+async function loadData(){
+  setSyncStatus('loading');
+  try{
+    const res=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?id=eq.${SB_ROW}&select=data`,{
+      headers:{
+        'apikey':SB_KEY,
+        'Authorization':'Bearer '+SB_KEY,
+      },
+    });
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const rows=await res.json();
+    if(rows&&rows.length>0&&rows[0].data){
+      applyData(rows[0].data);
+      // Update local cache too
+      try{localStorage.setItem(LS_KEY,JSON.stringify(rows[0].data));}catch(e){}
+      setSyncStatus('saved');
+      console.log('[XInfin] Data loaded from Supabase.');
+      return true;
+    }
+    // No row yet in Supabase — try localStorage
+    return loadFromLocal();
+  }catch(e){
+    console.warn('[XInfin] Supabase load failed, trying localStorage:',e);
+    setSyncStatus('error');
+    return loadFromLocal();
+  }
+}
+
+function loadFromLocal(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(!raw)return false;
+    applyData(JSON.parse(raw));
+    console.log('[XInfin] Data loaded from localStorage (offline cache).');
+    return true;
+  }catch(e){return false;}
+}
+
+function applyData(d){
+  if(d.STAFF)    STAFF=d.STAFF;
+  if(d.CLIENTS)  CLIENTS=d.CLIENTS;
+  if(d.PROJECTS) PROJECTS=d.PROJECTS;
+  if(d.ARCHIVED) ARCHIVED=d.ARCHIVED;
+  if(d.nSid)nSid=d.nSid;
+  if(d.nCid)nCid=d.nCid;
+  if(d.nPid)nPid=d.nPid;
+  if(d.nTid)nTid=d.nTid;
+  if(d.nAid)nAid=d.nAid;
+}
+
 const ini=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
 const gS=id=>STAFF.find(s=>s.id===id);
 const gP=id=>PROJECTS.find(p=>p.id===id);
@@ -1230,7 +1358,7 @@ function renderProjectsPage(){
       <div class="pc-foot"><span class="pc-foot-label">${p.staff.length} staff assigned</span>
         <div style="display:flex;gap:6px">
           <button class="icon-btn edit" onclick="event.stopPropagation();openProjModal(${p.id})" title="Edit"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button class="icon-btn" onclick="event.stopPropagation();confirmDel('Delete project &quot;${p.name.replace(/'/g,"\\'")}?',()=>{PROJECTS=PROJECTS.filter(x=>x.id!==${p.id});renderAll();})" title="Delete"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+          <button class="icon-btn" onclick="event.stopPropagation();confirmDel('Delete project &quot;${p.name.replace(/'/g,"\\'")}?',()=>{PROJECTS=PROJECTS.filter(x=>x.id!==${p.id});saveData();renderAll();})" title="Delete"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
         </div>
       </div>
     </div>`;}).join('');
@@ -1296,6 +1424,7 @@ function setTaskPriority(pid,tid,prio){
   const p=gP(pid);if(!p)return;
   const t=(p.tasks||[]).find(x=>x.id===tid);if(!t)return;
   t.priority=prio;
+  saveData();
   renderPriorityPanel();
   renderDetail(pid);
 }
@@ -1374,7 +1503,7 @@ function renderDetail(pid){
           ${t.due?`<span style="font-size:11px;color:var(--muted)">${fdShort(t.due)}</span>`:''}
           ${t.cdate?`<span style="font-size:10px;color:var(--green)">✓ ${fdShort(t.cdate)}</span>`:''}
           <button class="icon-btn edit" onclick="openTaskModal(${pid},${t.id})" title="Edit task"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          ${!t.recurring?`<button class="icon-btn" onclick="confirmDel('Delete this task?',()=>{const p=gP(${pid});p.tasks=p.tasks.filter(x=>x.id!==${t.id});renderAll();renderDetail(${pid});})"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>`:''}
+          ${!t.recurring?`<button class="icon-btn" onclick="confirmDel('Delete this task?',()=>{const p=gP(${pid});p.tasks=p.tasks.filter(x=>x.id!==${t.id});saveData();renderAll();renderDetail(${pid});})"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>`:''}
         </div>
       </div>
       <div class="task-bottom">
@@ -1470,7 +1599,7 @@ function toggleTaskDone(pid,tid){
     t.cdate=t.cdate||TODAY();
     if(t.recurring) t.lastReset=TODAY();
   }
-  renderAll();renderDetail(pid);
+  saveData();renderAll();renderDetail(pid);
 }
 
 function backToProjects(){
@@ -1523,7 +1652,7 @@ function renderClientsPage(){
         <span class="pc-foot-label">${c.email||''}</span>
         <div style="display:flex;gap:6px">
           <button class="icon-btn edit" onclick="event.stopPropagation();openClientModal(${c.id})" title="Edit"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button class="icon-btn" onclick="event.stopPropagation();confirmDel('Delete client &quot;${c.name}&quot;?',()=>{CLIENTS=CLIENTS.filter(x=>x.id!==${c.id});renderAll();})" title="Delete"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+          <button class="icon-btn" onclick="event.stopPropagation();confirmDel('Delete client &quot;${c.name}&quot;?',()=>{CLIENTS=CLIENTS.filter(x=>x.id!==${c.id});saveData();renderAll();})" title="Delete"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
         </div>
       </div>
     </div>`;}).join('');
@@ -1762,7 +1891,7 @@ function saveStaff(){
     STAFF.push({...data,id:nSid++});
     showToast(`${name} added to the team`);
   }
-  closeM('m-staff');
+  closeM('m-staff');saveData();
   renderAll();
 }
 
@@ -1784,6 +1913,7 @@ function deleteStaff(sid){
       });
     });
     STAFF=STAFF.filter(s=>s.id!==sid);
+    saveData();
     showToast(`${s.name} removed from the team`);
     renderAll();
   });
@@ -1922,8 +2052,8 @@ function renderAPBody(){
       <span class="mr-status" style="color:${lc}">${ll}</span>
     </div>`;}).join('');
 }
-function togglePS(pid,sid){const p=gP(pid);if(!p.staff.includes(sid)){p.staff.push(sid);renderAll();renderAPBody();if(detailPid===pid)renderDetail(pid);}}
-function rmPS(pid,sid,e){if(e)e.stopPropagation();const p=gP(pid);p.staff=p.staff.filter(id=>id!==sid);renderAll();if(detailPid===pid)renderDetail(pid);}
+function togglePS(pid,sid){const p=gP(pid);if(!p.staff.includes(sid)){p.staff.push(sid);saveData();renderAll();renderAPBody();if(detailPid===pid)renderDetail(pid);}}
+function rmPS(pid,sid,e){if(e)e.stopPropagation();const p=gP(pid);p.staff=p.staff.filter(id=>id!==sid);saveData();renderAll();if(detailPid===pid)renderDetail(pid);}
 
 /* Assign task staff — Member / Reviewer tabs */
 let atPid=null,atTid=null,atTab='member';
@@ -1998,7 +2128,7 @@ function toggleTS(pid,tid,sid){
       if(!p.staff.includes(sid))p.staff.push(sid);
     }
   }
-  renderAll();renderATBody();if(detailPid===pid)renderDetail(pid);
+  saveData();renderAll();renderATBody();if(detailPid===pid)renderDetail(pid);
 }
 
 // Remove from both roles
@@ -2008,7 +2138,7 @@ function rmTS(pid,tid,sid,e){
   if(t.members)t.members=t.members.filter(id=>id!==sid);
   if(t.reviewers)t.reviewers=t.reviewers.filter(id=>id!==sid);
   if(t.staff)t.staff=t.staff.filter(id=>id!==sid);
-  renderAll();if(detailPid===pid)renderDetail(pid);
+  saveData();renderAll();if(detailPid===pid)renderDetail(pid);
 }
 
 /* Project modal */
@@ -2032,7 +2162,7 @@ function saveProj(){
   const data={name,clientId,desc:document.getElementById('pf-desc').value.trim()};
   if(ePid){Object.assign(gP(ePid),data);}
   else{PROJECTS.push({...data,id:nPid++,staff:[],tasks:[]});}
-  closeM('m-proj');renderAll();
+  closeM('m-proj');saveData();renderAll();
   if(ePid&&detailPid===ePid)renderDetail(ePid);
 }
 
@@ -2119,7 +2249,7 @@ function saveTask(){
       lastReset:rec?TODAY():'',
     });
   }
-  closeM('m-task');renderAll();if(detailPid===tPid)renderDetail(tPid);
+  closeM('m-task');saveData();renderAll();if(detailPid===tPid)renderDetail(tPid);
 }
 
 /* Client modal */
@@ -2137,7 +2267,7 @@ function saveClient(){
   const data={name,contact:document.getElementById('cf-contact').value.trim(),email:document.getElementById('cf-email').value.trim(),phone:document.getElementById('cf-phone').value.trim(),loc:document.getElementById('cf-loc').value.trim(),industry:document.getElementById('cf-industry').value.trim()};
   if(eCid){Object.assign(gC(eCid),data);}
   else{CLIENTS.push({...data,id:nCid++,c:CLIENT_COLORS[CLIENTS.length%CLIENT_COLORS.length]});}
-  closeM('m-client');renderAll();
+  closeM('m-client');saveData();renderAll();
   if(eCid&&detailCid===eCid)renderClientDetail(eCid);
 }
 
@@ -2161,6 +2291,7 @@ function archiveProject(pid){
     ARCHIVED.unshift(snapshot);
     // Remove from PROJECTS
     PROJECTS=PROJECTS.filter(x=>x.id!==pid);
+    saveData();
     backToProjects();
     showToast(`"${p.name}" has been archived successfully`);
     renderAll();
@@ -2219,6 +2350,7 @@ function unarchiveProject(pid){
   confirmDel(`Restore "${p.name}" back to active projects?`,()=>{
     ARCHIVED.splice(idx,1);
     PROJECTS.push(p);
+    saveData();
     showToast(`"${p.name}" restored to active projects`);
     renderAll();
   });
@@ -2286,6 +2418,7 @@ function runDayRollover(targetDate, silent){
 
   // Persist last-run date so we don't run again on same day
   try{ localStorage.setItem('xinfin_last_rollover', today); }catch(e){}
+  if(recurringReset>0) saveData();
 
   if(!silent){
     const msgs=[];
@@ -2339,8 +2472,47 @@ function scheduleNextMidnight(){
 /* ════════════════════ INIT ════════════════════ */
 document.getElementById('dateChip').textContent=new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
 document.getElementById('snapshot-date').value=TODAY();
-checkAndRunRolloverOnLoad();
-go('overview');
+
+// Boot: load data from Supabase (async), then start the app
+(async()=>{
+  // Show a loading state while fetching
+  document.getElementById('dashboard').style.display='none';
+  document.getElementById('login-screen').classList.add('hidden');
+  const loadingEl=document.createElement('div');
+  loadingEl.id='boot-loader';
+  loadingEl.style.cssText='position:fixed;inset:0;background:#0A0F1E;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif;gap:14px;';
+  loadingEl.innerHTML=`
+    <img src="https://infinconsultants.com/_next/image?url=%2Finfinlogowhite.png&w=640&q=75" style="height:38px;opacity:0.9;" onerror="this.style.display='none'"/>
+    <div style="color:rgba(255,255,255,0.4);font-size:13px;">Loading your data…</div>
+    <div style="width:120px;height:3px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+      <div id="boot-bar" style="width:0%;height:100%;background:#2563EB;border-radius:3px;transition:width 0.4s;"></div>
+    </div>`;
+  document.body.appendChild(loadingEl);
+
+  // Check if user is authenticated first
+  let isAuthed=false;
+  try{isAuthed=sessionStorage.getItem('xinfin_session')==='authenticated';}catch(e){}
+
+  if(!isAuthed){
+    // Not logged in — show login screen, don't load data yet
+    loadingEl.remove();
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('login-email').focus();
+    return;
+  }
+
+  // Logged in — load data
+  document.getElementById('boot-bar').style.width='40%';
+  await loadData();
+  document.getElementById('boot-bar').style.width='80%';
+  checkAndRunRolloverOnLoad();
+  document.getElementById('boot-bar').style.width='100%';
+  setTimeout(()=>{
+    loadingEl.remove();
+    document.getElementById('dashboard').style.display='';
+    go('overview');
+  },200);
+})();
 </script>
 </body>
 </html>
