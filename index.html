@@ -467,7 +467,7 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
   <div class="s-footer">
     <div class="s-user">
       <div class="s-uav">CO</div>
-      <div style="flex:1;min-width:0;"><div class="s-uname">Chief of Operations</div><div class="s-urole">nischal@infinconsultants.com</div></div>
+      <div style="flex:1;min-width:0;"><div class="s-uname">Chief of Operations</div><div class="s-urole"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="533d3a20303b323f133a3d353a3d303c3d20263f27323d27207d303c3e">[email&#160;protected]</a></div></div>
       <button onclick="signOut()" title="Sign out" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.3);padding:4px;border-radius:6px;transition:color 0.15s;flex-shrink:0;" onmouseover="this.style.color='#FCA5A5'" onmouseout="this.style.color='rgba(255,255,255,0.3)'">
         <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
@@ -531,13 +531,35 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
 
     <!-- STAFF -->
     <div class="view" id="view-staff">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+        <div style="position:relative;flex:1;min-width:200px;">
+          <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--muted2);" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="staff-search" type="text" placeholder="Search by name or role…"
+            style="width:100%;padding:9px 12px 9px 36px;border:1px solid var(--border2);border-radius:9px;font-size:13px;color:var(--text);background:var(--surface);outline:none;font-family:'Inter',sans-serif;"
+            oninput="renderStaffPage()" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'"/>
+        </div>
+        <select id="staff-filter-status" onchange="renderStaffPage()"
+          style="border:1px solid var(--border2);border-radius:9px;padding:9px 32px 9px 12px;font-size:13px;color:var(--text);background:var(--surface);outline:none;cursor:pointer;appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%222%22%3E%3Cpolyline points=%226 9 12 15 18 9%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 10px center;">
+          <option value="">All Status</option>
+          <option value="available">Available</option>
+          <option value="active">Active</option>
+          <option value="overloaded">Overloaded</option>
+        </select>
+      </div>
       <div class="panel">
-        <div class="ph"><div class="ph-title">All Staff Members</div><div class="ph-badge" id="st-count"></div></div>
+        <div class="ph">
+          <div class="ph-title">All Staff Members</div>
+          <div class="ph-badge" id="st-count"></div>
+        </div>
         <div style="overflow-x:auto;">
           <table class="staff-table">
-            <thead><tr><th>Staff Member</th><th>Role</th><th>Assigned Tasks</th><th>Workload</th><th>Status</th></tr></thead>
+            <thead><tr><th>Staff Member</th><th>Role</th><th>Department</th><th>Assigned Tasks</th><th>Workload</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
             <tbody id="staff-tbody"></tbody>
           </table>
+        </div>
+        <div class="empty-state" id="staff-empty" style="display:none;padding:36px">
+          <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <p>No staff found. <span style="color:var(--accent);cursor:pointer" onclick="openStaffModal(null)">Add a staff member</span></p>
         </div>
       </div>
     </div>
@@ -731,13 +753,61 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
   </div>
 </div></div>
 
+<!-- New/Edit Staff -->
+<div class="overlay" id="m-staff"><div class="modal sm">
+  <div class="mh"><div class="mt" id="m-staff-t">Add Staff Member</div><div class="ms">Fill in the staff member's details</div></div>
+  <div class="mb">
+    <div class="fr">
+      <div class="fg"><label class="fl">First Name</label><input class="fi" id="sf-fname" placeholder="e.g. Aarav"/></div>
+      <div class="fg"><label class="fl">Last Name</label><input class="fi" id="sf-lname" placeholder="e.g. Sharma"/></div>
+    </div>
+    <div class="fg"><label class="fl">Role / Designation</label><input class="fi" id="sf-role" placeholder="e.g. Senior Accountant"/></div>
+    <div class="fg"><label class="fl">Department</label>
+      <select class="fi fsel" id="sf-dept">
+        <option value="">— Select Department —</option>
+        <option>Accounting</option>
+        <option>Tax</option>
+        <option>Audit</option>
+        <option>Payroll</option>
+        <option>Finance</option>
+        <option>Compliance</option>
+        <option>Operations</option>
+        <option>Management</option>
+      </select>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Email</label><input class="fi" id="sf-email" placeholder="aarav@infinconsultants.com" type="email"/></div>
+      <div class="fg"><label class="fl">Phone</label><input class="fi" id="sf-phone" placeholder="+977 98XXXXXXXX"/></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label class="fl">Join Date</label><input class="fi" id="sf-joined" type="date"/></div>
+      <div class="fg"><label class="fl">Employment Type</label>
+        <select class="fi fsel" id="sf-type">
+          <option value="Full-time">Full-time</option>
+          <option value="Part-time">Part-time</option>
+          <option value="Contract">Contract</option>
+          <option value="Intern">Intern</option>
+        </select>
+      </div>
+    </div>
+    <div class="fg"><label class="fl">Avatar Colour</label>
+      <div id="sf-color-picker" style="display:flex;gap:8px;flex-wrap:wrap;padding:4px 0;"></div>
+      <input type="hidden" id="sf-color" value="#2563EB"/>
+    </div>
+  </div>
+  <div class="mf">
+    <button class="btn-secondary" onclick="closeM('m-staff')">Cancel</button>
+    <button class="btn-primary" onclick="saveStaff()">Save Staff Member</button>
+  </div>
+</div></div>
+
 <!-- Confirm delete -->
 <div class="overlay" id="m-confirm"><div class="modal sm">
   <div class="mh"><div class="mt">Confirm Delete</div><div class="ms" id="m-confirm-msg"></div></div>
   <div class="mf"><button class="btn-secondary" onclick="closeM('m-confirm')">Cancel</button><button class="btn-danger" id="m-confirm-ok">Delete</button></div>
 </div></div>
 
-<script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 /* ══════════════════════════════════════════════════
    AUTH MODULE — XInfin Operations Dashboard
    • Credentials verified via SHA-256 hash (never stored as plaintext)
@@ -904,129 +974,20 @@ function signOut(){
 /* ════════════════════ DATA ════════════════════ */
 const COLORS=['#2563EB','#7C3AED','#0891B2','#16A34A','#EA580C','#DB2777','#D97706','#059669','#4F46E5','#C2410C','#0284C7','#65A30D','#9333EA','#B45309','#DC2626','#0369A1','#15803D','#6D28D9'];
 const CLIENT_COLORS=['#2563EB','#7C3AED','#0891B2','#16A34A','#EA580C','#DB2777','#D97706','#4F46E5'];
+const ALL_COLORS=['#2563EB','#7C3AED','#0891B2','#16A34A','#EA580C','#DB2777','#D97706','#059669','#4F46E5','#C2410C','#0284C7','#65A30D','#9333EA','#B45309','#DC2626','#0369A1','#15803D','#6D28D9','#0F766E','#7C2D12'];
 
-const STAFF=[
-  {id:1,name:'Aarav Sharma',role:'Senior Accountant',c:COLORS[0]},
-  {id:2,name:'Priya Thapa',role:'Tax Specialist',c:COLORS[1]},
-  {id:3,name:'Rohan Karki',role:'Audit Associate',c:COLORS[2]},
-  {id:4,name:'Sita Rai',role:'Bookkeeper',c:COLORS[3]},
-  {id:5,name:'Bikash Shrestha',role:'Financial Analyst',c:COLORS[4]},
-  {id:6,name:'Anita Basnet',role:'Payroll Specialist',c:COLORS[5]},
-  {id:7,name:'Dipak Gurung',role:'Junior Accountant',c:COLORS[6]},
-  {id:8,name:'Suman Limbu',role:'Tax Associate',c:COLORS[7]},
-  {id:9,name:'Kabita Tamang',role:'Audit Senior',c:COLORS[8]},
-  {id:10,name:'Nabin Pandey',role:'Accounts Payable',c:COLORS[9]},
-  {id:11,name:'Renu Koirala',role:'Compliance Officer',c:COLORS[10]},
-  {id:12,name:'Amar Adhikari',role:'Senior Bookkeeper',c:COLORS[11]},
-  {id:13,name:'Srijana Poudel',role:'Cost Accountant',c:COLORS[12]},
-  {id:14,name:'Rajesh Bhandari',role:'Senior Accountant',c:COLORS[13]},
-  {id:15,name:'Mina Giri',role:'Accounts Receivable',c:COLORS[14]},
-  {id:16,name:'Suresh Dhakal',role:'Junior Accountant',c:COLORS[15]},
-  {id:17,name:'Binita Maharjan',role:'Tax Specialist',c:COLORS[16]},
-  {id:18,name:'Prabin Joshi',role:'Financial Analyst',c:COLORS[17]},
-];
+let nSid=1;
+let STAFF=[];
 
-let nCid=10,nPid=9,nTid=100;
+let nCid=1,nPid=1,nTid=1;
 
-let CLIENTS=[
-  {id:1,name:'TechNepal Pvt Ltd',contact:'Suraj Acharya',email:'suraj@technepal.com',phone:'+977 9801234567',loc:'Kathmandu, Nepal',industry:'Technology',c:CLIENT_COLORS[0]},
-  {id:2,name:'Himalayan Foods Co.',contact:'Binod Gurung',email:'binod@himfoods.com',phone:'+977 9802345678',loc:'Lalitpur, Nepal',industry:'Food & Beverage',c:CLIENT_COLORS[1]},
-  {id:3,name:'Sunrise Retailers',contact:'Anuj Shrestha',email:'anuj@sunrise.com',phone:'+977 9803456789',loc:'Bhaktapur, Nepal',industry:'Retail',c:CLIENT_COLORS[2]},
-  {id:4,name:'EverestBuild Corp.',contact:'Deepak Rai',email:'deepak@everestbuild.com',phone:'+977 9804567890',loc:'Kathmandu, Nepal',industry:'Construction',c:CLIENT_COLORS[3]},
-  {id:5,name:'Kathmandu Motors',contact:'Sanjay Thapa',email:'sanjay@ktmmotors.com',phone:'+977 9805678901',loc:'Kathmandu, Nepal',industry:'Automotive',c:CLIENT_COLORS[4]},
-  {id:6,name:'Nepal Traders Pvt Ltd',contact:'Rajan Koirala',email:'rajan@nepaltraders.com',phone:'+977 9806789012',loc:'Pokhara, Nepal',industry:'Trading',c:CLIENT_COLORS[5]},
-  {id:7,name:'Summit Hospitality',contact:'Priya Maharjan',email:'priya@summit.com',phone:'+977 9807890123',loc:'Kathmandu, Nepal',industry:'Hospitality',c:CLIENT_COLORS[6]},
-  {id:8,name:'BlueSky Insurance',contact:'Ramesh Pandey',email:'ramesh@bluesky.com',phone:'+977 9808901234',loc:'Kathmandu, Nepal',industry:'Insurance',c:CLIENT_COLORS[7]},
-  {id:9,name:'Green Valley Farms',contact:'Sushila Tamang',email:'sushila@greenvalley.com',phone:'+977 9809012345',loc:'Chitwan, Nepal',industry:'Agriculture',c:CLIENT_COLORS[0]},
-];
+let CLIENTS=[];
 
-let PROJECTS=[
-  {id:1,name:'Annual Tax Filing',clientId:1,status:'In Progress',due:'2026-03-31',cdate:'',staff:[1,2,8],
-   tasks:[
-    {id:1,name:'Collect invoices & receipts',desc:'Gather all Q1 documents',status:'Completed',due:'2026-03-10',cdate:'2026-03-09',staff:[1,8],recurring:false,freq:''},
-    {id:2,name:'Prepare tax computation',desc:'Calculate taxable income',status:'In Progress',due:'2026-03-25',cdate:'',staff:[2],recurring:false,freq:''},
-    {id:3,name:'File with IRD',desc:'Submit online via IRD portal',status:'Not Started',due:'2026-03-31',cdate:'',staff:[],recurring:false,freq:''},
-  ]},
-  {id:2,name:'Audit & Compliance',clientId:2,status:'Under Review',due:'2026-03-20',cdate:'',staff:[3,9,14],
-   tasks:[
-    {id:4,name:'Ledger reconciliation',desc:'Match all account entries',status:'Completed',due:'2026-03-05',cdate:'2026-03-04',staff:[3,14],recurring:false,freq:''},
-    {id:5,name:'Compliance checklist',desc:'Review regulatory requirements',status:'Completed',due:'2026-03-12',cdate:'2026-03-11',staff:[9],recurring:false,freq:''},
-    {id:6,name:'Final audit report',desc:'Prepare summary for management',status:'In Progress',due:'2026-03-20',cdate:'',staff:[3,9,14],recurring:false,freq:''},
-  ]},
-  {id:3,name:'Bookkeeping Q1',clientId:3,status:'In Progress',due:'2026-04-15',cdate:'',staff:[4,12],
-   tasks:[
-    {id:7,name:'Record daily transactions',desc:'Post to general ledger',status:'Not Started',due:'2026-04-10',cdate:'',staff:[4],recurring:true,freq:'daily',lastReset:''},
-    {id:8,name:'Bank reconciliation',desc:'Match bank statements',status:'Not Started',due:'2026-04-15',cdate:'',staff:[12],recurring:false,freq:''},
-  ]},
-  {id:4,name:'Payroll Processing',clientId:4,status:'In Progress',due:'2026-03-25',cdate:'',staff:[6,10],
-   tasks:[
-    {id:9,name:'Calculate salaries',desc:'Including overtime',status:'In Progress',due:'2026-03-22',cdate:'',staff:[6],recurring:false,freq:''},
-    {id:10,name:'Generate payslips',desc:'For all 120 employees',status:'Not Started',due:'2026-03-25',cdate:'',staff:[10],recurring:false,freq:''},
-    {id:15,name:'Daily payroll check',desc:'Verify attendance records',status:'Not Started',due:'',cdate:'',staff:[6],recurring:true,freq:'weekdays',lastReset:''},
-  ]},
-  {id:5,name:'Financial Reporting',clientId:5,status:'In Progress',due:'2026-04-30',cdate:'',staff:[5,18],
-   tasks:[
-    {id:11,name:'Income statement draft',desc:'Revenue and expense summary',status:'In Progress',due:'2026-04-15',cdate:'',staff:[5],recurring:false,freq:''},
-    {id:12,name:'Balance sheet',desc:'Assets, liabilities and equity',status:'Not Started',due:'2026-04-25',cdate:'',staff:[18],recurring:false,freq:''},
-    {id:16,name:'Daily data entry review',desc:'Check new entries for errors',status:'Not Started',due:'',cdate:'',staff:[5,18],recurring:true,freq:'daily',lastReset:''},
-  ]},
-  {id:6,name:'GST Reconciliation',clientId:6,status:'Not Started',due:'2026-04-10',cdate:'',staff:[],tasks:[]},
-  {id:7,name:'Cost Analysis',clientId:7,status:'In Progress',due:'2026-03-28',cdate:'',staff:[13,7],
-   tasks:[
-    {id:13,name:'Cost categorisation',desc:'Direct vs indirect costs',status:'Completed',due:'2026-03-20',cdate:'2026-03-19',staff:[13],recurring:false,freq:''},
-    {id:14,name:'Variance analysis',desc:'Budget vs actual',status:'In Progress',due:'2026-03-28',cdate:'',staff:[7,13],recurring:false,freq:''},
-    {id:17,name:'Weekly cost report',desc:'Submit to management',status:'Not Started',due:'',cdate:'',staff:[13],recurring:true,freq:'weekly',lastReset:''},
-  ]},
-  {id:8,name:'Compliance Review',clientId:8,status:'Not Started',due:'2026-05-05',cdate:'',staff:[],tasks:[]},
-  /* BACKLOG - completed/historical */
-  {id:100,name:'FY2025 Tax Filing',clientId:1,status:'Completed',due:'2025-03-31',cdate:'2025-03-28',staff:[1,2],
-   tasks:[
-    {id:200,name:'Document collection',desc:'',status:'Completed',due:'2025-03-15',cdate:'2025-03-12',staff:[1]},
-    {id:201,name:'Tax computation',desc:'',status:'Completed',due:'2025-03-25',cdate:'2025-03-22',staff:[2]},
-    {id:202,name:'IRD filing',desc:'',status:'Completed',due:'2025-03-31',cdate:'2025-03-28',staff:[1,2]},
-  ]},
-  {id:101,name:'FY2025 Annual Audit',clientId:2,status:'Completed',due:'2025-04-15',cdate:'2025-04-10',staff:[3,9],
-   tasks:[
-    {id:203,name:'Ledger review',desc:'',status:'Completed',due:'2025-04-01',cdate:'2025-03-30',staff:[3]},
-    {id:204,name:'Audit report',desc:'',status:'Completed',due:'2025-04-15',cdate:'2025-04-10',staff:[3,9]},
-  ]},
-  {id:102,name:'Payroll Setup',clientId:4,status:'Completed',due:'2025-06-30',cdate:'2025-06-25',staff:[6],
-   tasks:[
-    {id:205,name:'System configuration',desc:'',status:'Completed',due:'2025-06-20',cdate:'2025-06-18',staff:[6]},
-    {id:206,name:'Staff onboarding',desc:'',status:'Completed',due:'2025-06-30',cdate:'2025-06-25',staff:[6]},
-  ]},
-  {id:103,name:'Q3 Bookkeeping',clientId:3,status:'Completed',due:'2025-10-15',cdate:'2025-10-12',staff:[4,12],
-   tasks:[
-    {id:207,name:'Q3 ledger entries',desc:'',status:'Completed',due:'2025-10-10',cdate:'2025-10-08',staff:[4]},
-    {id:208,name:'Reconciliation',desc:'',status:'Completed',due:'2025-10-15',cdate:'2025-10-12',staff:[12]},
-  ]},
-  {id:104,name:'Insurance Compliance 2024',clientId:8,status:'Cancelled',due:'2025-08-01',cdate:'2025-07-15',staff:[11],
-   tasks:[
-    {id:209,name:'Initial assessment',desc:'',status:'Completed',due:'2025-07-01',cdate:'2025-06-30',staff:[11]},
-    {id:210,name:'Full audit',desc:'',status:'Cancelled',due:'2025-08-01',cdate:'',staff:[]},
-  ]},
-  {id:105,name:'GST Filing Q2 2025',clientId:6,status:'On Hold',due:'2025-09-30',cdate:'',staff:[2,8],
-   tasks:[
-    {id:211,name:'Data collection',desc:'',status:'Completed',due:'2025-09-15',cdate:'2025-09-14',staff:[8]},
-    {id:212,name:'Filing preparation',desc:'',status:'On Hold',due:'2025-09-30',cdate:'',staff:[2]},
-  ]},
-];
+let PROJECTS=[];
 
-/* Pre-loaded archived projects */
-let ARCHIVED=[
-  {id:300,name:'FY2024 Tax Filing',clientId:1,archivedDate:'2024-04-02',cdate:'2024-04-01',due:'2024-03-31',staff:[1,2],
-   tasks:[
-    {id:400,name:'Document collection',status:'Completed',cdate:'2024-03-15',staff:[1],recurring:false,freq:''},
-    {id:401,name:'Tax computation',status:'Completed',cdate:'2024-03-25',staff:[2],recurring:false,freq:''},
-    {id:402,name:'IRD filing',status:'Completed',cdate:'2024-04-01',staff:[1,2],recurring:false,freq:''},
-  ]},
-  {id:301,name:'FY2024 Annual Audit',clientId:2,archivedDate:'2024-05-10',cdate:'2024-05-08',due:'2024-05-15',staff:[3,9],
-   tasks:[
-    {id:403,name:'Ledger review',status:'Completed',cdate:'2024-04-20',staff:[3],recurring:false,freq:''},
-    {id:404,name:'Audit report',status:'Completed',cdate:'2024-05-08',staff:[3,9],recurring:false,freq:''},
-  ]},
-];
-let nAid=302;
+/* Archived projects */
+let ARCHIVED=[];
+let nAid=1;
 const ini=n=>n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
 const gS=id=>STAFF.find(s=>s.id===id);
 const gP=id=>PROJECTS.find(p=>p.id===id);
@@ -1068,7 +1029,7 @@ const VIEW_META={
   overview:{title:'Operations Overview',sub:'Real-time allocation and project status — Pahelo Pul, Kathmandu',btn:'New Project'},
   projects:{title:'Projects',sub:'Manage and track all active client engagements',btn:'New Project'},
   clients:{title:'Clients',sub:'Client directory and project history',btn:'New Client'},
-  staff:{title:'Staff Directory',sub:'Team members and workload overview',btn:''},
+  staff:{title:'Staff Directory',sub:'Manage team members, roles and workload',btn:'Add Staff'},
   snapshot:{title:'Daily Snapshot',sub:'See what was completed or pending on any given date',btn:''},
   backlog:{title:'Project Backlog',sub:'History of completed, cancelled and on-hold projects',btn:''},
   archive:{title:'Project Archive',sub:'All projects completed at 100% and manually archived',btn:''},
@@ -1093,6 +1054,7 @@ function go(v){
 
 function handlePrimary(){
   if(curView==='clients')openClientModal(null);
+  else if(curView==='staff')openStaffModal(null);
   else openProjModal(null);
 }
 
@@ -1462,19 +1424,169 @@ function openNewProjForClient(cid){
 
 /* ══ STAFF ══ */
 function renderStaffPage(){
-  document.getElementById('st-count').textContent=STAFF.length+' members';
-  document.getElementById('staff-tbody').innerHTML=STAFF.map(s=>{
+  const q=(document.getElementById('staff-search')?.value||'').toLowerCase().trim();
+  const fStatus=document.getElementById('staff-filter-status')?.value||'';
+
+  let list=STAFF.filter(s=>{
+    if(q&&!s.name.toLowerCase().includes(q)&&!s.role.toLowerCase().includes(q)&&!(s.dept||'').toLowerCase().includes(q))return false;
+    if(fStatus){
+      const n=tCount(s.id);
+      const st=n===0?'available':n>=4?'overloaded':'active';
+      if(st!==fStatus)return false;
+    }
+    return true;
+  });
+
+  const emptyEl=document.getElementById('staff-empty');
+  const tbody=document.getElementById('staff-tbody');
+  document.getElementById('st-count').textContent=list.length+' of '+STAFF.length+' members';
+
+  if(list.length===0){
+    emptyEl.style.display='block'; tbody.innerHTML=''; return;
+  }
+  emptyEl.style.display='none';
+
+  tbody.innerHTML=list.map(s=>{
     const tasks=tList(s.id);const n=tasks.length;
-    const wpct=Math.min(100,n*14);const wc=n===0?'#9BA3B2':n>=4?'#DC2626':'#2563EB';
-    const ll=n===0?'<span style="color:#16A34A;font-weight:600">Available</span>':n>=4?'<span style="color:#DC2626;font-weight:600">Overloaded</span>':'<span style="color:#EA580C;font-weight:600">Active</span>';
-    const pills=tasks.slice(0,3).map(t=>`<span class="task-pill" title="${t.proj}">${t.task}</span>`).join('');
-    const more=tasks.length>3?`<span class="task-pill" style="background:var(--gray-l);color:var(--muted)">+${tasks.length-3}</span>`:'';
-    return `<tr><td><div style="display:flex;align-items:center;gap:10px"><div class="sav" style="background:${s.c};width:32px;height:32px;font-size:11px">${ini(s.name)}</div><div><div style="font-weight:500">${s.name}</div></div></div></td>
-      <td style="color:var(--muted)">${s.role}</td>
+    const wpct=Math.min(100,n*14);
+    const wc=n===0?'#9BA3B2':n>=4?'#DC2626':'#2563EB';
+    const ll=n===0
+      ?'<span style="color:#16A34A;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#16A34A;display:inline-block"></span>Available</span>'
+      :n>=4
+      ?'<span style="color:#DC2626;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#DC2626;display:inline-block"></span>Overloaded</span>'
+      :'<span style="color:#EA580C;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#EA580C;display:inline-block"></span>Active</span>';
+    const pills=tasks.slice(0,2).map(t=>`<span class="task-pill" title="${t.proj}: ${t.task}">${t.task}</span>`).join('');
+    const more=tasks.length>2?`<span class="task-pill" style="background:var(--gray-l);color:var(--muted)">+${tasks.length-2}</span>`:'';
+    const typeBadge=s.type&&s.type!=='Full-time'
+      ?`<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--gold-l);color:var(--gold);border:1px solid rgba(180,83,9,0.2);margin-left:5px">${s.type}</span>`:'';
+    const joined=s.joined?`<div style="font-size:10.5px;color:var(--muted2);margin-top:1px">Since ${fdShort(s.joined)}</div>`:'';
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="sav" style="background:${s.c};width:36px;height:36px;font-size:12px;flex-shrink:0">${ini(s.name)}</div>
+          <div>
+            <div style="display:flex;align-items:center;font-weight:500">${s.name}${typeBadge}</div>
+            <div style="font-size:11px;color:var(--muted)">${s.email||''}</div>
+            ${joined}
+          </div>
+        </div>
+      </td>
+      <td style="color:var(--text2);font-size:13px">${s.role}</td>
+      <td>
+        ${s.dept?`<span style="font-size:11px;background:var(--accent-l);color:var(--accent);border:1px solid rgba(37,99,235,0.15);padding:2px 8px;border-radius:20px">${s.dept}</span>`:'<span style="color:var(--muted2);font-size:12px">—</span>'}
+      </td>
       <td><div class="task-pills">${pills||'<span style="color:var(--muted2);font-size:12px">—</span>'}${more}</div></td>
-      <td><div style="display:flex;align-items:center;gap:8px"><div class="wb"><div class="wbf" style="width:${wpct}%;background:${wc}"></div></div><span style="font-size:11px;color:var(--muted)">${n}</span></div></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="wb"><div class="wbf" style="width:${wpct}%;background:${wc}"></div></div>
+          <span style="font-size:11px;color:var(--muted);min-width:14px">${n}</span>
+        </div>
+      </td>
       <td>${ll}</td>
-    </tr>`;}).join('');
+      <td>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+          <button class="icon-btn edit" onclick="openStaffModal(${s.id})" title="Edit staff member">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="icon-btn" onclick="deleteStaff(${s.id})" title="Remove staff member">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ════════════════════ STAFF CRUD ════════════════════ */
+let eSid=null;
+
+function buildColorPicker(selected){
+  return ALL_COLORS.map(c=>`
+    <div onclick="selectStaffColor('${c}')"
+      style="width:24px;height:24px;border-radius:50%;background:${c};cursor:pointer;border:2.5px solid ${c===selected?'var(--text)':'transparent'};transition:border 0.12s;flex-shrink:0;"
+      id="sc-${c.replace('#','')}"></div>`).join('');
+}
+
+function selectStaffColor(c){
+  document.getElementById('sf-color').value=c;
+  ALL_COLORS.forEach(col=>{
+    const el=document.getElementById('sc-'+col.replace('#',''));
+    if(el) el.style.border=`2.5px solid ${col===c?'var(--text)':'transparent'}`;
+  });
+}
+
+function openStaffModal(sid){
+  eSid=sid;
+  document.getElementById('m-staff-t').textContent=sid?'Edit Staff Member':'Add Staff Member';
+  const defaultColor=ALL_COLORS[STAFF.length%ALL_COLORS.length];
+  if(sid){
+    const s=gS(sid);
+    const[fn,...rest]=s.name.split(' ');
+    document.getElementById('sf-fname').value=fn;
+    document.getElementById('sf-lname').value=rest.join(' ');
+    document.getElementById('sf-role').value=s.role||'';
+    document.getElementById('sf-dept').value=s.dept||'';
+    document.getElementById('sf-email').value=s.email||'';
+    document.getElementById('sf-phone').value=s.phone||'';
+    document.getElementById('sf-joined').value=s.joined||'';
+    document.getElementById('sf-type').value=s.type||'Full-time';
+    document.getElementById('sf-color').value=s.c;
+    document.getElementById('sf-color-picker').innerHTML=buildColorPicker(s.c);
+  } else {
+    ['sf-fname','sf-lname','sf-role','sf-email','sf-phone'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('sf-dept').value='';
+    document.getElementById('sf-joined').value='';
+    document.getElementById('sf-type').value='Full-time';
+    document.getElementById('sf-color').value=defaultColor;
+    document.getElementById('sf-color-picker').innerHTML=buildColorPicker(defaultColor);
+  }
+  openM('m-staff');
+}
+
+function saveStaff(){
+  const fn=document.getElementById('sf-fname').value.trim();
+  const ln=document.getElementById('sf-lname').value.trim();
+  if(!fn){alert('First name is required.');return;}
+  const name=ln?fn+' '+ln:fn;
+  const role=document.getElementById('sf-role').value.trim();
+  if(!role){alert('Role / Designation is required.');return;}
+  const data={
+    name,role,
+    dept:document.getElementById('sf-dept').value,
+    email:document.getElementById('sf-email').value.trim(),
+    phone:document.getElementById('sf-phone').value.trim(),
+    joined:document.getElementById('sf-joined').value,
+    type:document.getElementById('sf-type').value,
+    c:document.getElementById('sf-color').value||ALL_COLORS[0],
+  };
+  if(eSid){
+    Object.assign(gS(eSid),data);
+    showToast(`${name} updated successfully`);
+  } else {
+    STAFF.push({...data,id:nSid++});
+    showToast(`${name} added to the team`);
+  }
+  closeM('m-staff');
+  renderAll();
+}
+
+function deleteStaff(sid){
+  const s=gS(sid);
+  if(!s)return;
+  const taskCount=tCount(sid);
+  const msg=taskCount>0
+    ?`Remove ${s.name}? They have ${taskCount} active task${taskCount>1?'s':''} assigned. They will be unassigned from all tasks and projects.`
+    :`Remove ${s.name} from the team?`;
+  confirmDel(msg,()=>{
+    // Remove from all project staff lists and task staff lists
+    PROJECTS.forEach(p=>{
+      p.staff=p.staff.filter(id=>id!==sid);
+      if(p.tasks) p.tasks.forEach(t=>{t.staff=(t.staff||[]).filter(id=>id!==sid);});
+    });
+    STAFF=STAFF.filter(s=>s.id!==sid);
+    showToast(`${s.name} removed from the team`);
+    renderAll();
+  });
 }
 
 /* ══ DAILY SNAPSHOT ══ */
