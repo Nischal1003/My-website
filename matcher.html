@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAGN Product Matcher</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F0F2F5;--surface:#FFFFFF;--surface2:#F7F8FA;--border:#E3E6EB;--border2:#CDD1D9;--text:#0D1117;--text2:#3D4452;--muted:#6B7385;--muted2:#9BA3B2;--brand:#0A0F1E;--accent:#2563EB;--green:#16A34A;--green-l:#F0FDF4;--amber:#D97706;--amber-l:#FFFBEB;--orange:#EA580C;--orange-l:#FFF7ED;--red:#DC2626;--red-l:#FEF2F2;--blue:#2563EB;--blue-l:#EFF6FF;--shadow-sm:0 1px 2px rgba(0,0,0,0.04);--shadow-md:0 4px 12px rgba(0,0,0,0.07);}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13.5px;line-height:1.5;min-height:100vh;}
+.mh{background:linear-gradient(135deg,#1B2A4A,#0F1B33);border-bottom:3px solid #D4A843;}
+.mht{background:#D4A843;padding:4px 20px;text-align:center;}
+.mht span{font-size:10px;font-weight:600;color:#0F1B33;letter-spacing:1px;text-transform:uppercase;}
+.mhm{padding:14px 20px;display:flex;align-items:center;justify-content:space-between;}
+.mhb{display:flex;align-items:center;gap:14px;}
+.mhl{width:42px;height:42px;background:#D4A843;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;color:#0F1B33;}
+.mhtt{font-size:20px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px;}
+.mhtt span{color:#D4A843;}
+.ctn{padding:22px;max-width:1300px;margin:0 auto;}
+.btn{padding:8px 18px;border-radius:8px;border:none;cursor:pointer;font-size:12.5px;font-weight:600;transition:all 0.15s;font-family:'Inter',sans-serif;}
+.btn-gold{background:#D4A843;color:#0F1B33;}.btn-gold:hover{background:#E8BF5A;}
+.btn-gold:disabled{background:#D1D5DB;color:#9CA3B2;cursor:wait;}
+.btn-big{padding:12px 36px;font-size:14px;border-radius:10px;}
+.btn-out{background:var(--blue-l);color:var(--blue);border:1px solid rgba(37,99,235,0.2);}
+.btn-ghost{background:var(--surface);color:var(--text2);border:1px solid var(--border2);}
+.btn-danger{background:var(--red-l);color:var(--red);border:1px solid rgba(220,38,38,0.2);}
+.center{text-align:center;}
+
+/* ═══ VENDOR SELECTOR ═══ */
+.vs{max-width:600px;margin:40px auto;text-align:center;}
+.vs-title{font-size:22px;font-weight:700;margin-bottom:4px;}
+.vs-sub{font-size:13px;color:var(--muted);margin-bottom:28px;}
+.vs-list{display:flex;flex-direction:column;gap:8px;margin-bottom:24px;text-align:left;}
+.vs-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:14px;}
+.vs-card:hover{border-color:var(--accent);box-shadow:var(--shadow-md);transform:translateY(-1px);}
+.vs-av{width:42px;height:42px;background:#D4A843;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#0F1B33;flex-shrink:0;}
+.vs-info{flex:1;min-width:0;}
+.vs-name{font-size:15px;font-weight:600;}
+.vs-meta{font-size:12px;color:var(--muted);margin-top:3px;display:flex;gap:12px;}
+.vs-meta b{color:var(--text2);font-weight:600;}
+.vs-arrow{color:var(--muted2);font-size:18px;flex-shrink:0;}
+.vs-del{padding:6px;border-radius:6px;border:none;cursor:pointer;background:transparent;color:var(--muted2);transition:all 0.12s;flex-shrink:0;}
+.vs-del:hover{background:var(--red-l);color:var(--red);}
+.vs-empty{color:var(--muted);font-size:13px;padding:20px;background:var(--surface);border:1px dashed var(--border2);border-radius:12px;margin-bottom:24px;}
+.vs-divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--muted2);font-size:12px;}
+.vs-divider::before,.vs-divider::after{content:'';flex:1;height:1px;background:var(--border);}
+.vs-new{display:flex;gap:10px;align-items:center;}
+.vs-input{flex:1;padding:11px 16px;border-radius:10px;border:1.5px solid var(--border2);background:var(--surface);color:var(--text);font-size:14px;font-weight:600;outline:none;font-family:'Inter',sans-serif;}
+.vs-input:focus{border-color:#D4A843;}
+.vs-input::placeholder{color:var(--muted2);font-weight:400;}
+.sync-ind{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;}
+.sync-ok{background:var(--green-l);color:var(--green);}
+.sync-ing{background:var(--amber-l);color:var(--amber);}
+.sync-err{background:var(--red-l);color:var(--red);}
+.sync-dot{width:6px;height:6px;border-radius:50%;animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* ═══ MAIN UI ═══ */
+.uploads{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:20px;}
+.uz{flex:1;min-width:260px;padding:36px 20px;border-radius:12px;cursor:pointer;border:2px dashed var(--border2);background:var(--surface);transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:10px;box-shadow:var(--shadow-sm);}
+.uz:hover{border-color:#D4A843;box-shadow:var(--shadow-md);}
+.uz.done{border-color:var(--green);border-style:solid;background:var(--green-l);}
+.uz .ui{font-size:38px;}.uz .ul{font-size:14px;font-weight:700;}.uz.done .ul{color:var(--green);}
+.uz .us{font-size:12px;color:var(--muted);text-align:center;}.uz input{display:none;}
+.rtxt{font-size:14px;color:var(--muted);margin-bottom:14px;}.rtxt b{color:var(--brand);}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin-bottom:20px;}
+.sc{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;position:relative;overflow:hidden;box-shadow:var(--shadow-sm);}
+.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:12px 12px 0 0;}
+.sc.sg::before{background:var(--green);}.sc.sr::before{background:var(--red);}.sc.so::before{background:var(--orange);}.sc.sy::before{background:var(--amber);}.sc.sn::before{background:var(--brand);}
+.scl{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;}
+.scv{font-size:30px;font-weight:700;line-height:1;}.scs{font-size:11px;color:var(--muted);margin-top:6px;}
+.dvd{height:1px;background:var(--border);margin:20px 0;}
+.cbar{display:flex;gap:18px;margin-bottom:14px;align-items:center;flex-wrap:wrap;padding:12px 16px;background:var(--surface);border-radius:10px;border:1px solid var(--border);}
+.ci{display:flex;align-items:center;gap:6px;}.cd{width:9px;height:9px;border-radius:50%;}
+.cd.ch{background:var(--green);}.cd.cm{background:var(--amber);}.cd.cl{background:var(--orange);}.cd.cn{background:var(--red);}
+.ct{font-size:13px;color:var(--muted);}.ct b{color:var(--text);margin-left:3px;}
+.tbar{display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:var(--surface);border-radius:10px;border:1px solid var(--border);}
+.tab{padding:7px 16px;border-radius:7px;border:none;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--muted);transition:all 0.12s;}
+.tab:hover{color:var(--text);background:var(--surface2);}.tab.act{background:var(--brand);color:#fff;}
+.tbar select,.tbar input[type="text"]{padding:7px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:12px;outline:none;}
+.tbar input[type="text"]{width:170px;}.tbar input:focus,.tbar select:focus{border-color:var(--accent);}
+.tbar input::placeholder{color:var(--muted2);}.spacer{flex:1;}
+.mr{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;overflow:hidden;transition:box-shadow 0.15s;}
+.mr:hover{box-shadow:var(--shadow-md);}
+.mrh{padding:12px 18px;cursor:pointer;display:flex;align-items:center;gap:12px;transition:background 0.1s;}
+.mrh:hover{background:var(--surface2);}
+.mrn2{font-size:11px;color:var(--muted2);width:30px;flex-shrink:0;font-weight:500;}
+.mri{flex:1;min-width:0;}.mri .mn{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mri .mm{font-size:11px;color:var(--muted);margin-top:2px;}
+.mra{font-size:14px;color:var(--muted2);flex-shrink:0;}
+.mrb{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.badge{display:inline-flex;padding:3px 10px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;}
+.bg{background:var(--green-l);color:var(--green);border:1px solid rgba(22,163,74,0.2);}
+.by{background:var(--amber-l);color:var(--amber);border:1px solid rgba(217,119,6,0.2);}
+.bo{background:var(--orange-l);color:var(--orange);border:1px solid rgba(234,88,12,0.2);}
+.br{background:var(--red-l);color:var(--red);border:1px solid rgba(220,38,38,0.2);}
+.bb{background:var(--blue-l);color:var(--blue);border:1px solid rgba(37,99,235,0.2);}
+.mrs{font-size:12px;color:var(--muted);width:30px;text-align:right;font-weight:600;}
+.mrx{font-size:12px;color:var(--muted2);transition:transform 0.15s;display:inline-block;}
+.bh{border-left:4px solid var(--green);}.bm{border-left:4px solid var(--amber);}.bl{border-left:4px solid var(--orange);}.bn{border-left:4px solid var(--red);}
+.mrd{padding:0 18px 18px;border-top:1px solid var(--border);display:none;background:var(--surface2);}
+.dc{display:flex;gap:14px;margin-top:14px;}
+.dcol{flex:1;background:var(--surface);border-radius:10px;padding:16px;border:1px solid var(--border);}
+.dcol h4{font-size:11px;text-transform:uppercase;letter-spacing:0.7px;margin-bottom:12px;font-weight:700;padding-bottom:8px;border-bottom:2px solid var(--border);}
+.dcol h4.dns{color:var(--accent);}.dcol h4.dsp{color:var(--green);}
+.dr{display:flex;font-size:12px;margin-bottom:5px;line-height:1.5;}
+.dr .dk{color:var(--muted);width:65px;flex-shrink:0;font-weight:600;text-transform:uppercase;font-size:10px;}
+.dr .dv{color:var(--text);word-break:break-word;}
+.dd{font-size:11.5px;color:var(--text2);margin-top:10px;line-height:1.6;max-height:55px;overflow:auto;padding-top:8px;border-top:1px solid var(--border);}
+.sb{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;}
+.sig{font-size:11px;padding:4px 10px;border-radius:6px;font-weight:500;background:var(--blue-l);color:var(--blue);border:1px solid rgba(37,99,235,0.15);}
+.sigw{background:var(--red-l);color:var(--red);border:1px solid rgba(220,38,38,0.15);}
+.ab{margin-top:12px;display:flex;gap:6px;}
+.pk{margin-top:8px;background:var(--surface);border-radius:10px;padding:10px;max-height:220px;overflow:auto;border:1px solid var(--border);display:none;box-shadow:0 6px 20px rgba(0,0,0,0.1);}
+.pk input{width:100%;padding:8px 12px;border-radius:7px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:12px;margin-bottom:6px;outline:none;}
+.pki{padding:9px 12px;border-radius:7px;cursor:pointer;font-size:12px;color:var(--text);transition:background 0.1s;margin-bottom:2px;}
+.pki:hover{background:var(--blue-l);}.pki b{font-weight:600;}.pki small{font-size:11px;color:var(--muted);}
+.us{margin-top:24px;}.us h3{font-size:14px;font-weight:600;color:var(--orange);margin-bottom:10px;}
+.ut{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.uth{display:grid;grid-template-columns:170px 1fr 100px 70px;padding:10px 16px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);font-weight:600;background:var(--surface2);}
+.utb{max-height:350px;overflow:auto;}
+.utr{display:grid;grid-template-columns:170px 1fr 100px 70px;padding:9px 16px;font-size:12px;border-bottom:1px solid var(--border);color:var(--text);}
+.utr:hover{background:var(--surface2);}
+.empty{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
+::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:var(--bg);}::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:3px;}
+</style>
+</head>
+<body>
+<div class="mh">
+<div class="mht"><span id="htag">MAGN · Product Matcher</span></div>
+<div class="mhm">
+<div class="mhb"><div class="mhl">M</div><div class="mhtt"><span>MAGN</span> Product Matcher</div></div>
+<div style="display:flex;gap:8px;align-items:center;">
+<div id="sync-el"></div>
+<div id="exp-wrap" style="display:none"><button class="btn btn-gold" onclick="doExport()">↓ Export .xlsx</button></div>
+<button class="btn btn-ghost" id="back-vendor-btn" style="display:none" onclick="backToVendors()">← Switch Vendor</button>
+</div>
+</div>
+</div>
+<div class="ctn">
+<!-- VENDOR SELECTOR -->
+<div id="vs-section">
+<div class="vs">
+<div class="vs-title">Select Vendor</div>
+<div class="vs-sub">Choose a vendor to start or resume a session</div>
+
+<!-- Vendor Dropdown -->
+<div style="margin-bottom:20px;">
+<label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:8px;">Choose Vendor</label>
+<select id="vs-dropdown" style="width:100%;padding:13px 16px;border-radius:10px;border:1.5px solid var(--border2);background:var(--surface);color:var(--text);font-size:15px;font-weight:600;outline:none;cursor:pointer;font-family:'Inter',sans-serif;appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2214%22 height=%2214%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23888%22 stroke-width=%222%22%3E%3Cpolyline points=%226 9 12 15 18 9%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 14px center;" onfocus="this.style.borderColor='#D4A843'" onblur="this.style.borderColor='var(--border2)'">
+<option value="" disabled selected>— Select a vendor —</option>
+</select>
+</div>
+<button class="btn btn-gold btn-big" style="width:100%;margin-bottom:24px;" onclick="goWithDropdown()">Open Vendor Session →</button>
+
+<!-- Saved sessions -->
+<div id="vs-list"></div>
+
+<!-- Add new vendor -->
+<div class="vs-divider">or add a new vendor</div>
+<div class="vs-new">
+<input type="text" class="vs-input" id="vs-new-name" placeholder="Enter new vendor name" onkeydown="if(event.key==='Enter')startNewVendor()"/>
+<button class="btn btn-gold btn-big" onclick="startNewVendor()">+ Add & Start</button>
+</div>
+</div>
+</div>
+<!-- UPLOAD SECTION -->
+<div id="up-section" style="display:none">
+<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;">
+<label style="font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;">Vendor</label>
+<div style="font-size:16px;font-weight:700;color:var(--text);" id="cur-vendor-name"></div>
+</div>
+<div class="uploads">
+<div class="uz" id="nz" onclick="document.getElementById('ni').click()"><div class="ui">📦</div><div class="ul" id="nl">Netsuite Items</div><div class="us" id="ns2">Drop .xlsx or click · First sheet</div><input type="file" id="ni" accept=".xlsx,.xls,.csv" onchange="hFile(this,'ns')"></div>
+<div class="uz" id="sz" onclick="document.getElementById('si').click()"><div class="ui">🏭</div><div class="ul" id="sl">Supplier Catalog</div><div class="us" id="ss2">Drop .xlsx or click · First sheet</div><input type="file" id="si" accept=".xlsx,.xls,.csv" onchange="hFile(this,'sup')"></div>
+</div>
+<div class="center" id="run-sec" style="display:none"><div class="rtxt" id="rtxt"></div><button class="btn btn-gold btn-big" id="rbtn" onclick="runMatch()">⚙ Run Matching Engine</button></div>
+</div>
+<!-- RESULTS -->
+<div id="res-sec" style="display:none"><div id="sum"></div><div class="dvd"></div><div class="cbar" id="cbar"></div><div class="tbar" id="tbar"></div><div id="rlist"></div><div id="usup"></div></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   SUPABASE — vendor-wise persistence + sync
+   ═══════════════════════════════════════════════ */
+const SB='https://xrepjbqwstkqfztjxqsq.supabase.co';
+const SK='sb_publishable_3HSsDekMnLLNSeFyKyINxQ_-omWhguz';
+const TBL='xinfin_data';
+
+function sbKey(v){return 'magn_v_'+v.replace(/[^a-zA-Z0-9]/g,'_').toLowerCase();}
+
+async function sbGet(id){
+  try{const r=await fetch(SB+'/rest/v1/'+TBL+'?id=eq.'+encodeURIComponent(id)+'&select=data',{headers:{'apikey':SK,'Authorization':'Bearer '+SK}});if(!r.ok)throw new Error(r.status);const rows=await r.json();return rows&&rows[0]?rows[0].data:null;}catch(e){console.warn('sbGet fail',e);return null;}
+}
+async function sbSet(id,data){
+  try{const r=await fetch(SB+'/rest/v1/'+TBL,{method:'POST',headers:{'apikey':SK,'Authorization':'Bearer '+SK,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},body:JSON.stringify({id,data})});if(!r.ok)throw new Error(await r.text());}catch(e){console.warn('sbSet fail',e);}
+}
+async function sbDel(id){
+  try{await fetch(SB+'/rest/v1/'+TBL+'?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':SK,'Authorization':'Bearer '+SK}});}catch(e){}
+}
+
+function showSync(state){
+  const el=document.getElementById('sync-el');
+  if(state==='saving')el.innerHTML='<div class="sync-ind sync-ing"><div class="sync-dot" style="background:var(--amber)"></div>Saving…</div>';
+  else if(state==='ok')el.innerHTML='<div class="sync-ind sync-ok">✓ Synced</div>';
+  else if(state==='err')el.innerHTML='<div class="sync-ind sync-err">⚠ Offline</div>';
+  else if(state==='load')el.innerHTML='<div class="sync-ind sync-ing"><div class="sync-dot" style="background:var(--blue)"></div>Loading…</div>';
+  else el.innerHTML='';
+  if(state==='ok')setTimeout(()=>{const e=document.getElementById('sync-el');if(e&&e.textContent.includes('Synced'))e.innerHTML='';},2500);
+}
+
+/* ═══ VENDOR INDEX ═══ */
+const PREDEFINED_VENDORS=["KWS","Terrier","ACTEK","Machine and Welding","CODIPRO","KEN FORGING","Yoke","DIVERSIFIED PLASTICS","COLUMBUS MCKINNON","Miller Products"];
+
+async function loadVendorIndex(){
+  const d=await sbGet('magn_index');
+  return d&&d.vendors?d.vendors:[];
+}
+async function saveVendorIndex(vendors){
+  await sbSet('magn_index',{vendors});
+}
+
+function populateDropdown(savedVendors){
+  const sel=document.getElementById('vs-dropdown');
+  sel.innerHTML='<option value="" disabled selected>— Select a vendor —</option>';
+  // Build combined list: predefined + any custom vendors from saved sessions
+  const allNames=new Set(PREDEFINED_VENDORS.map(v=>v));
+  (savedVendors||[]).forEach(v=>{allNames.add(v.name);});
+  const sorted=[...allNames].sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
+  sorted.forEach(name=>{
+    const saved=(savedVendors||[]).find(v=>v.name.toLowerCase()===name.toLowerCase());
+    const label=saved?name+' (saved session)':name;
+    sel.innerHTML+='<option value="'+esc(name)+'">'+esc(label)+'</option>';
+  });
+}
+
+function goWithDropdown(){
+  const sel=document.getElementById('vs-dropdown');
+  const name=sel.value;
+  if(!name){sel.focus();sel.style.borderColor='var(--red)';setTimeout(()=>sel.style.borderColor='var(--border2)',1500);return;}
+  resumeVendor(name);
+}
+
+/* ═══ STATE ═══ */
+let vendor='',nsData=null,supData=null,results=null,unmSup=[];
+let curTab="all",curConf="all",curSearch="",version=0;
+let syncTimer=null;
+
+/* ═══ SAVE FULL SESSION ═══ */
+async function saveSession(){
+  if(!vendor)return;
+  showSync('saving');
+  version++;
+  const payload={vendor,version,lastModified:new Date().toISOString(),nsData,supData,
+    results:results?results.map(r=>({ni:r.ni,ns:r.ns,sup:r.sup,score:r.score,conf:r.conf,sig:r.sig,disc:r.disc,status:r.status,remarks:r.remarks,manual:r.manual||false})):null,
+    unmSup:unmSup?unmSup.map(u=>({sup:u.sup,idx:u.idx,cat:u.cat})):[]
+  };
+  try{await sbSet(sbKey(vendor),payload);showSync('ok');}catch(e){showSync('err');}
+}
+
+/* ═══ LOAD SESSION ═══ */
+async function loadSession(vendorName){
+  showSync('load');
+  const d=await sbGet(sbKey(vendorName));
+  if(!d){showSync('');return false;}
+  vendor=d.vendor||vendorName;
+  nsData=d.nsData||null;supData=d.supData||null;
+  results=d.results||null;unmSup=d.unmSup||[];version=d.version||0;
+  showSync('ok');return true;
+}
+
+/* ═══ POLL FOR REMOTE CHANGES (cross-device sync) ═══ */
+function startSync(){
+  if(syncTimer)clearInterval(syncTimer);
+  syncTimer=setInterval(async()=>{
+    if(!vendor)return;
+    try{
+      const d=await sbGet(sbKey(vendor));
+      if(d&&d.version&&d.version>version){
+        console.log('[MAGN] Remote update detected, reloading... (remote v'+d.version+' > local v'+version+')');
+        version=d.version;
+        nsData=d.nsData;supData=d.supData;results=d.results;unmSup=d.unmSup||[];
+        if(results)renderAll();
+        showSync('ok');
+      }
+    }catch(e){}
+  },12000); // poll every 12 seconds
+}
+function stopSync(){if(syncTimer){clearInterval(syncTimer);syncTimer=null;}}
+
+/* ═══ VENDOR SELECTOR ═══ */
+async function renderVendorSelector(){
+  document.getElementById('vs-section').style.display='block';
+  document.getElementById('up-section').style.display='none';
+  document.getElementById('res-sec').style.display='none';
+  document.getElementById('exp-wrap').style.display='none';
+  document.getElementById('back-vendor-btn').style.display='none';
+  document.getElementById('htag').textContent='MAGN · Product Matcher';
+  stopSync();
+
+  showSync('load');
+  const vendors=await loadVendorIndex();
+  showSync('');
+
+  populateDropdown(vendors);
+
+  const list=document.getElementById('vs-list');
+  if(!vendors.length){list.innerHTML='';return;}
+  list.innerHTML='<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Saved Sessions</div>'+vendors.map(v=>{
+    const ts=v.lastModified?timeAgo(v.lastModified):'';
+    const mc=v.matched||0,ns=v.nsCount||0,sup=v.supCount||0;
+    return `<div class="vs-card" onclick="resumeVendor('${esc(v.name)}')">
+      <div class="vs-av">${(v.name[0]||'?').toUpperCase()}</div>
+      <div class="vs-info">
+        <div class="vs-name">${esc(v.name)}</div>
+        <div class="vs-meta">
+          ${ns?`<span><b>${ns}</b> NS items</span>`:''}
+          ${sup?`<span><b>${sup}</b> Supplier items</span>`:''}
+          ${mc?`<span><b>${mc}</b> matched</span>`:''}
+          ${ts?`<span>${ts}</span>`:''}
+        </div>
+      </div>
+      <button class="vs-del" onclick="event.stopPropagation();deleteVendor('${esc(v.name)}')" title="Delete session">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+      </button>
+      <div class="vs-arrow">→</div>
+    </div>`;}).join('');
+}
+
+function timeAgo(iso){
+  const diff=Date.now()-new Date(iso).getTime();
+  const m=Math.floor(diff/60000),h=Math.floor(m/60),d=Math.floor(h/24);
+  if(m<1)return 'just now';if(m<60)return m+'m ago';if(h<24)return h+'h ago';return d+'d ago';
+}
+
+async function startNewVendor(){
+  const name=document.getElementById('vs-new-name').value.trim();
+  if(!name){document.getElementById('vs-new-name').focus();return;}
+  vendor=name;nsData=null;supData=null;results=null;unmSup=[];version=0;
+  // Add to index if not there
+  const vendors=await loadVendorIndex();
+  if(!vendors.find(v=>v.name.toLowerCase()===name.toLowerCase())){
+    vendors.push({name,lastModified:new Date().toISOString(),nsCount:0,supCount:0,matched:0});
+    await saveVendorIndex(vendors);
+  }
+  // Also add to predefined list for this session so dropdown stays updated
+  if(!PREDEFINED_VENDORS.find(v=>v.toLowerCase()===name.toLowerCase())){
+    PREDEFINED_VENDORS.push(name);
+  }
+  showUploadView();
+}
+
+async function resumeVendor(name){
+  showSync('load');
+  // Ensure vendor is in index (could be first time from dropdown)
+  const vendors=await loadVendorIndex();
+  if(!vendors.find(v=>v.name.toLowerCase()===name.toLowerCase())){
+    vendors.push({name,lastModified:new Date().toISOString(),nsCount:0,supCount:0,matched:0});
+    await saveVendorIndex(vendors);
+  }
+  const loaded=await loadSession(name);
+  if(loaded&&results){
+    // Has existing results — go straight to results view
+    vendor=name;
+    showResultsView();
+    startSync();
+  } else if(loaded&&nsData&&supData){
+    // Has data but no results yet
+    vendor=name;
+    showUploadView();
+    // Mark uploads as done
+    document.getElementById('nz').classList.add('done');
+    document.getElementById('nl').textContent='✓ Loaded from session';
+    document.getElementById('ns2').textContent=nsData.length+' NS items';
+    document.getElementById('sz').classList.add('done');
+    document.getElementById('sl').textContent='✓ Loaded from session';
+    document.getElementById('ss2').textContent=supData.length+' Supplier items';
+    document.getElementById('run-sec').style.display='block';
+    document.getElementById('rtxt').innerHTML='Ready: <b>'+nsData.length+'</b> NS × <b>'+supData.length+'</b> Supplier';
+    startSync();
+  } else {
+    // No data — fresh upload needed
+    vendor=name;
+    showUploadView();
+    startSync();
+  }
+}
+
+async function deleteVendor(name){
+  if(!confirm('Delete all saved data for "'+name+'"? This cannot be undone.'))return;
+  await sbDel(sbKey(name));
+  const vendors=await loadVendorIndex();
+  const updated=vendors.filter(v=>v.name.toLowerCase()!==name.toLowerCase());
+  await saveVendorIndex(updated);
+  renderVendorSelector();
+}
+
+function showUploadView(){
+  document.getElementById('vs-section').style.display='none';
+  document.getElementById('up-section').style.display='block';
+  document.getElementById('res-sec').style.display='none';
+  document.getElementById('exp-wrap').style.display='none';
+  document.getElementById('back-vendor-btn').style.display='inline-flex';
+  document.getElementById('cur-vendor-name').textContent=vendor;
+  document.getElementById('htag').textContent='MAGN · '+vendor;
+}
+
+function showResultsView(){
+  document.getElementById('vs-section').style.display='none';
+  document.getElementById('up-section').style.display='none';
+  document.getElementById('res-sec').style.display='block';
+  document.getElementById('exp-wrap').style.display='block';
+  document.getElementById('back-vendor-btn').style.display='inline-flex';
+  document.getElementById('htag').textContent='MAGN · '+vendor;
+  renderAll();
+}
+
+function backToVendors(){
+  stopSync();vendor='';nsData=supData=results=null;unmSup=[];
+  curTab="all";curConf="all";curSearch="";
+  // Reset upload zones
+  ['nz','sz'].forEach(id=>document.getElementById(id).classList.remove('done'));
+  document.getElementById('nl').textContent='Netsuite Items';document.getElementById('sl').textContent='Supplier Catalog';
+  document.getElementById('ns2').innerHTML='Drop .xlsx or click · First sheet';document.getElementById('ss2').innerHTML='Drop .xlsx or click · First sheet';
+  document.getElementById('ni').value='';document.getElementById('si').value='';
+  document.getElementById('run-sec').style.display='none';
+  renderVendorSelector();
+}
+
+/* ═══ FILE HANDLING ═══ */
+function hFile(input,type){const file=input.files[0];if(!file)return;const reader=new FileReader();reader.onload=function(e){const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});const sn=wb.SheetNames[0];const data=XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:""});if(type==='ns'){nsData=data;document.getElementById('nz').classList.add('done');document.getElementById('nl').textContent='✓ '+file.name;document.getElementById('ns2').innerHTML=data.length+' items from <b>'+esc(sn)+'</b>';}else{supData=data;document.getElementById('sz').classList.add('done');document.getElementById('sl').textContent='✓ '+file.name;document.getElementById('ss2').innerHTML=data.length+' items from <b>'+esc(sn)+'</b>';}if(nsData&&supData){document.getElementById('run-sec').style.display='block';document.getElementById('rtxt').innerHTML='Ready: <b>'+nsData.length+'</b> NS × <b>'+supData.length+'</b> Supplier';}};reader.readAsArrayBuffer(file);}
+
+/* ═══ MATCHING ENGINE — STRICT 1:1 ═══ */
+const MR=[/\b([A-Z]{1,2}-\d{3}[A-Z]?)\b/g,/\b(\d+[A-Z]\d{3})\b/g,/\bModel\s+([A-Z0-9]+-?[A-Z0-9]+)/gi,/\b(B13L|A13L|BB13L)\b/gi,/\b(PL\d\/\d)\b/gi,/\b(HB\d+[A-Z]?-?\d*[A-Z]*)\b/g,/\b(6[AO]\d+)\b/gi,/\b(12TOHB)\b/gi,/\bType\s+(\d{3})\b/gi];
+const CN={"Eye x Eye":"Eye to Eye","E&E":"Eye to Eye","Eye to Eye":"Eye to Eye","Clevis x Clevis":"Jaw to Jaw","J&J":"Jaw to Jaw","C&C":"Jaw to Jaw","Jaw to Jaw":"Jaw to Jaw","Clevis x Eye":"Jaw to Eye","J&E":"Jaw to Eye","Jaw to Eye":"Jaw to Eye","Eye to Jaw":"Eye to Jaw","Eye x Clevis":"Eye to Jaw","E&C":"Eye to Jaw","E&J":"Eye to Jaw","J&H":"Jaw to Hook","Jaw to Hook":"Jaw to Hook","E&H":"Eye to Hook","Eye to Hook":"Eye to Hook","BN&BN":"Bullet to Bullet","Bullet Nose":"Bullet to Bullet","Bullet to Bullet":"Bullet to Bullet","S&H":"Socket to Hook","Socket to Hook":"Socket to Hook","Wedge to Hook":"Wedge to Hook","Wedge to Jaw":"Wedge to Jaw","Thimble to Jaw":"Thimble to Jaw","Thimble to Eye":"Thimble to Eye","Thimble to Bullet":"Thimble to Bullet"};
+const ST=new Set(['nan','the','and','for','with','miller','products','swivel']);
+function xM(t){if(!t)return[];t=String(t);const s=new Set();MR.forEach(p=>{const r=new RegExp(p.source,p.flags);let m;while((m=r.exec(t))!==null)s.add(m[1].toUpperCase().replace(/\s+/g,""));});return[...s];}
+function xT(t){if(!t)return null;t=String(t);for(const p of[/(\d+\.?\d*)\s*[Tt]on/gi,/WLL[:\s]*(\d+\.?\d*)\s*[Tt]/gi,/WLL[:\s]*(\d[\d,]*)\s*lbs/gi,/Working\s+Load[:\s]*(\d[\d,]*)\s*lbs/gi]){const r=new RegExp(p.source,p.flags);const m=r.exec(t);if(m){let v=parseFloat(m[1].replace(/,/g,""));if(v>100)v/=2000;return v;}}return null;}
+function xC(t){if(!t)return null;t=String(t);for(const[k,v]of Object.entries(CN))if(t.includes(k))return v;return null;}
+function xCat(t){if(!t)return null;const u=String(t).toUpperCase();if(u.includes("HEADACHE")||u.includes("OVERHAUL BALL")||u.includes("SPLIT BALL"))return"HB";if(u.includes("SWIVEL")||u.includes("PULLING"))return"SW";if(u.includes("INSULATOR")||u.includes("INSU-LINE")||u.includes("ISO"))return"INS";if(u.includes("LATCH"))return"LT";if(u.includes("WRECKING")||u.includes("DEMOLITION"))return"WR";if(u.includes("HOOK")&&!u.includes("SWIVEL"))return"HK";return"OT";}
+function tok(t){if(!t)return new Set();const s=new Set();String(t).toLowerCase().replace(/[^a-z0-9]/g," ").split(/\s+/).forEach(w=>{if(w.length>1&&!ST.has(w))s.add(w);});return s;}
+function jac(a,b){if(!a.size||!b.size)return 0;let i=0;a.forEach(x=>{if(b.has(x))i++});return i/(a.size+b.size-i);}
+function ntx(r){return["Display Name","Long Description","Item Name/Number","SKU","Vendor's Item Code"].map(c=>{const v=r[c];return(v!=null&&String(v).trim()!==''&&String(v)!=='nan'&&String(v)!=='-')?String(v):'';}).filter(Boolean).join(" ");}
+function stx(r){return["Item Name","Marketing Description","Manufacturer Part Number"].map(c=>{const v=r[c];return(v!=null&&String(v).trim()!==''&&String(v)!=='nan')?String(v):'';}).filter(Boolean).join(" ");}
+
+function matchAll(){
+  const np=nsData.map((n,i)=>{const t=ntx(n);return{i,m:xM(t),ton:xT(t),con:xC(t),cat:xCat(t),tok:tok(t),wt:parseFloat(n["Weight"])||0};});
+  const sp=supData.map((s,i)=>{const t=stx(s);return{i,m:xM(t),ton:xT(t),con:xC(t),cat:xCat(t),tok:tok(t),wt:parseFloat(s["Weight (LBS)"])||0};});
+  const cands=[];
+  for(const n of np){for(const s of sp){let sc=0;const sig=[];const mo=n.m.filter(m=>s.m.includes(m));if(mo.length){sc+=50;sig.push("Model: "+mo.join(", "));}if(n.ton&&s.ton&&Math.abs(n.ton-s.ton)<0.01){sc+=15;sig.push("Tonnage: "+n.ton+"T");}if(n.con&&s.con&&n.con===s.con){sc+=15;sig.push("Connection: "+n.con);}if(n.cat&&s.cat&&n.cat===s.cat){sc+=10;sig.push("Category: "+n.cat);}const ds=jac(n.tok,s.tok);sc+=ds*20;if(ds>0.15)sig.push("Desc: "+(ds*100).toFixed(0)+"%");if(n.wt>0&&s.wt>0&&Math.abs(n.wt-s.wt)/Math.max(n.wt,s.wt)<0.1){sc+=5;sig.push("Wt match");}if(sc>=20)cands.push({ni:n.i,si:s.i,score:sc,sig});}}
+  cands.sort((a,b)=>b.score-a.score);
+  const nu=new Set(),su=new Set(),am={};
+  for(const c of cands){if(nu.has(c.ni)||su.has(c.si))continue;am[c.ni]=c;nu.add(c.ni);su.add(c.si);}
+  const res=[];
+  for(let i=0;i<nsData.length;i++){const ns=nsData[i],a=am[i];if(a){const sup=supData[a.si],conf=a.score>=65?"high":a.score>=40?"medium":"low",disc=[];const nw=parseFloat(ns["Weight"])||0,sw=parseFloat(sup["Weight (LBS)"])||0;if(nw>0&&sw>0&&Math.abs(nw-sw)/Math.max(nw,sw)>0.1)disc.push("Wt: NS="+nw+" vs SUP="+sw);res.push({ns,ni:i,sup:{...sup,_i:a.si},score:a.score,conf,sig:a.sig,disc,status:"matched",remarks:"Matched"+(disc.length?" - "+disc.join(", "):"")});}else{res.push({ns,ni:i,sup:null,score:0,conf:"none",sig:[],disc:[],status:"unmatched",remarks:""});}}
+  unmSup=supData.map((s,i)=>({sup:s,idx:i,cat:xCat(stx(s))})).filter(s=>!su.has(s.idx));
+  return res;
+}
+
+async function runMatch(){
+  const b=document.getElementById('rbtn');b.disabled=true;b.textContent='⏳ Processing...';
+  setTimeout(async()=>{
+    results=matchAll();
+    // Update vendor index
+    const vendors=await loadVendorIndex();
+    const vi=vendors.find(v=>v.name.toLowerCase()===vendor.toLowerCase());
+    if(vi){vi.lastModified=new Date().toISOString();vi.nsCount=nsData.length;vi.supCount=supData.length;vi.matched=results.filter(r=>r.status==="matched").length;}
+    await saveVendorIndex(vendors);
+    await saveSession();
+    showResultsView();
+    startSync();
+    b.disabled=false;b.textContent='⚙ Run Matching Engine';
+  },50);
+}
+
+/* ═══ RENDERING ═══ */
+function renderAll(){renderSum();renderConf();renderTbar();renderList();renderUnm();}
+function renderSum(){const m=results.filter(r=>r.status==="matched").length,t=results.length,d=results.filter(r=>r.disc.length>0).length;document.getElementById('sum').innerHTML='<div class="sgrid">'+sC("Netsuite",t,"Input","sn")+sC("Supplier",supData.length,"Catalog","sn")+sC("Matched",m,(m/t*100).toFixed(0)+"% of NS","sg")+sC("Unmatched NS",t-m,(((t-m)/t)*100).toFixed(0)+"% of NS","sr")+sC("Unmatched Sup",unmSup.length,((unmSup.length/supData.length)*100).toFixed(0)+"% of Sup","so")+sC("Discrepancies",d,d>0?(d/m*100).toFixed(0)+"%":"None","sy")+'</div>';}
+function sC(l,v,s,c){const cm={"sg":"var(--green)","sr":"var(--red)","so":"var(--orange)","sy":"var(--amber)","sn":"var(--brand)"};return'<div class="sc '+c+'"><div class="scl">'+l+'</div><div class="scv" style="color:'+cm[c]+'">'+v+'</div><div class="scs">'+s+'</div></div>';}
+function renderConf(){const h=results.filter(r=>r.conf==="high").length,m=results.filter(r=>r.conf==="medium").length,l=results.filter(r=>r.conf==="low").length,n=results.filter(r=>r.conf==="none").length;document.getElementById('cbar').innerHTML=cI("ch","High",h)+cI("cm","Medium",m)+cI("cl","Low",l)+cI("cn","None",n)+(n>0||l>0?'<button class="btn btn-out" style="margin-left:auto;font-size:11px;padding:6px 14px" onclick="runAI()" id="ai-btn">🤖 AI Match</button>':'');}
+function cI(c,l,n){return'<div class="ci"><div class="cd '+c+'"></div><div class="ct">'+l+'<b>'+n+'</b></div></div>';}
+function renderTbar(){const m=results.filter(r=>r.status==="matched").length,u=results.length-m,d=results.filter(r=>r.disc.length>0).length;document.getElementById('tbar').innerHTML=tB("all","All ("+results.length+")")+tB("matched","Matched ("+m+")")+tB("unmatched","Unmatched NS ("+u+")")+tB("discrepancies","Disc ("+d+")")+tB("unmatchedsup","Unmatched Sup ("+unmSup.length+")")+'<div class="spacer"></div><select onchange="curConf=this.value;renderList()"><option value="all">All Confidence</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="none">None</option></select><input type="text" placeholder="Search..." oninput="curSearch=this.value;renderList()"><button class="btn btn-ghost" onclick="reUpload()">↑ Re-upload Files</button>';}
+function tB(k,l){return'<button class="tab'+(curTab===k?' act':'')+'" onclick="curTab=\''+k+'\';renderTbar();renderList()">'+l+'</button>';}
+function fR(){let r=results;if(curTab==="matched")r=r.filter(x=>x.status==="matched");if(curTab==="unmatched")r=r.filter(x=>x.status==="unmatched");if(curTab==="discrepancies")r=r.filter(x=>x.disc.length>0);if(curTab==="unmatchedsup")return[];if(curConf!=="all")r=r.filter(x=>x.conf===curConf);if(curSearch){const q=curSearch.toLowerCase();r=r.filter(x=>[x.ns["Display Name"],x.ns["Item Name/Number"],x.ns["SKU"],x.sup?.["Item Name"],x.sup?.["Manufacturer Part Number"]].some(v=>String(v||"").toLowerCase().includes(q)));}return r;}
+function renderList(){if(curTab==="unmatchedsup"){rUS();return;}document.getElementById('usup').innerHTML='';const f=fR();if(!f.length){document.getElementById('rlist').innerHTML='<div class="empty">No items match filters</div>';return;}document.getElementById('rlist').innerHTML=f.map(rRow).join("");}
+function rUS(){document.getElementById('rlist').innerHTML='';let f=unmSup;if(curSearch){const q=curSearch.toLowerCase();f=f.filter(u=>String(u.sup["Item Name"]||"").toLowerCase().includes(q)||String(u.sup["Manufacturer Part Number"]||"").toLowerCase().includes(q));}if(!f.length){document.getElementById('usup').innerHTML='<div class="empty">All supplier items matched</div>';return;}let h='<div class="us"><h3>Unmatched Supplier ('+f.length+')</h3><div class="ut"><div class="uth"><span>Part #</span><span>Item Name</span><span>Category</span><span>Weight</span></div><div class="utb">';f.forEach(u=>{h+='<div class="utr"><span style="font-size:11px;color:var(--text2)">'+esc(u.sup["Manufacturer Part Number"])+'</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(u.sup["Item Name"])+'</span><span style="color:var(--muted)">'+esc(u.cat)+'</span><span>'+u.sup["Weight (LBS)"]+'</span></div>';});h+='</div></div></div>';document.getElementById('usup').innerHTML=h;}
+
+function rRow(r){const ns=r.ns,sup=r.sup,nD=esc(ns["Display Name"]||ns["Item Name/Number"]),sD=sup?esc(sup["Item Name"]):'<i style="color:var(--muted)">No match</i>',sM=sup?esc(sup["Manufacturer Part Number"]):'',bc={high:"bg",medium:"by",low:"bo",none:"br"}[r.conf],bL={high:"bh",medium:"bm",low:"bl",none:"bn"}[r.conf];let badges='<span class="badge '+bc+'">'+r.conf.toUpperCase()+'</span><span class="mrs">'+r.score.toFixed(0)+'</span>';if(r.disc.length)badges+='<span class="badge br">⚠'+r.disc.length+'</span>';if(r.manual)badges+='<span class="badge bb">MANUAL</span>';return'<div class="mr '+bL+'"><div class="mrh" onclick="togR('+r.ni+')"><span class="mrn2">#'+(r.ni+1)+'</span><div class="mri"><div class="mn">'+nD+'</div><div class="mm">'+esc(ns["SKU"])+' · '+esc(ns["Category Group"])+'</div></div><span class="mra">'+(sup?"↔":"✕")+'</span><div class="mri"><div class="mn">'+sD+'</div><div class="mm">'+sM+'</div></div><div class="mrb">'+badges+'<span class="mrx" id="arr-'+r.ni+'">▾</span></div></div><div class="mrd" id="det-'+r.ni+'">'+rDet(r)+'</div></div>';}
+function rDet(r){const ns=r.ns,sup=r.sup;let h='<div class="dc"><div class="dcol"><h4 class="dns">Netsuite</h4>';[["Item",ns["Item Name/Number"]],["SKU",ns["SKU"]],["Display",ns["Display Name"]],["Category",ns["Category Group"]],["Weight",ns["Weight"]],["Cost",ns["Managed Cost"]?"$"+ns["Managed Cost"]:"—"]].forEach(([k,v])=>{h+='<div class="dr"><span class="dk">'+k+'</span><span class="dv">'+esc(String(v||"—").slice(0,120))+'</span></div>';});h+='<div class="dd">'+esc(String(ns["Long Description"]||"").slice(0,300))+'</div></div><div class="dcol"><h4 class="dsp">Supplier</h4>';if(sup)[["Part#",sup["Manufacturer Part Number"]],["Name",sup["Item Name"]],["Category",sup["Category"]],["Weight",sup["Weight (LBS)"]],["WLL",sup["Working Load limit (tons)"]?sup["Working Load limit (tons)"]+"T":"—"],["Rope",sup["Wire Rope Size"]||"—"]].forEach(([k,v])=>{h+='<div class="dr"><span class="dk">'+k+'</span><span class="dv">'+esc(String(v||"—").slice(0,120))+'</span></div>';});else h+='<div style="color:var(--muted);font-size:12px">No match found</div>';if(sup)h+='<div class="dd"><b>Features:</b> '+esc([sup["Item Feature 1"],sup["Item Feature 2"],sup["Item Feature 3"],sup["Item Feature 4"],sup["Item Feature 5"]].filter(x=>x&&String(x)!=='nan'&&x!=='').join(" · "))+'</div>';h+='</div></div><div class="sb">';r.sig.forEach(s=>{h+='<span class="sig">'+esc(s)+'</span>';});r.disc.forEach(d=>{h+='<span class="sig sigw">⚠ '+esc(d)+'</span>';});h+='</div><div class="ab"><button class="btn btn-out" style="font-size:11px;padding:6px 14px" onclick="togP('+r.ni+')">Manual Match</button>';if(sup)h+='<button class="btn btn-danger" style="font-size:11px;padding:6px 14px" onclick="unM('+r.ni+')">Unmatch</button>';h+='</div><div class="pk" id="pk-'+r.ni+'"><input placeholder="Search supplier..." oninput="fP('+r.ni+',this.value)"><div id="pl-'+r.ni+'">'+rPI(supData.slice(0,15))+'</div></div>';return h;}
+function rPI(items){return items.map(s=>'<div class="pki" onclick="dMM('+supData.indexOf(s)+',this)"><b>'+esc(s["Item Name"])+'</b><br><small>'+esc(s["Manufacturer Part Number"])+' · Wt: '+s["Weight (LBS)"]+' lbs</small></div>').join("");}
+function togR(i){const d=document.getElementById('det-'+i),a=document.getElementById('arr-'+i);if(!d)return;d.style.display=d.style.display==='block'?'none':'block';a.style.transform=d.style.display==='block'?'rotate(180deg)':'none';}
+function togP(i){const p=document.getElementById('pk-'+i);if(p)p.style.display=p.style.display==='block'?'none':'block';}
+function fP(ni,q){q=q.toLowerCase();const f=q?supData.filter(s=>String(s["Item Name"]||"").toLowerCase().includes(q)||String(s["Manufacturer Part Number"]||"").toLowerCase().includes(q)).slice(0,15):supData.slice(0,15);document.getElementById('pl-'+ni).innerHTML=rPI(f);}
+function dMM(si,el){const ni=parseInt(el.closest('.pk').id.replace('pk-',''));results[ni].sup={...supData[si],_i:si};results[ni].status="matched";results[ni].conf="high";results[ni].score=100;results[ni].sig=["Manual match"];results[ni].disc=[];results[ni].manual=true;results[ni].remarks="Matched - Manual";renderAll();saveSession();}
+function unM(ni){results[ni].sup=null;results[ni].status="unmatched";results[ni].conf="none";results[ni].score=0;results[ni].sig=[];results[ni].disc=[];results[ni].manual=true;results[ni].remarks="";renderAll();saveSession();}
+function reUpload(){results=null;unmSup=[];curTab="all";curConf="all";curSearch="";showUploadView();
+  ['nz','sz'].forEach(id=>document.getElementById(id).classList.remove('done'));
+  document.getElementById('nl').textContent='Netsuite Items';document.getElementById('sl').textContent='Supplier Catalog';
+  document.getElementById('ns2').innerHTML='Drop .xlsx or click · First sheet';document.getElementById('ss2').innerHTML='Drop .xlsx or click · First sheet';
+  document.getElementById('ni').value='';document.getElementById('si').value='';document.getElementById('run-sec').style.display='none';}
+function renderUnm(){if(curTab==="unmatchedsup"){rUS();return;}document.getElementById('usup').innerHTML='';}
+
+async function runAI(){const b=document.getElementById('ai-btn');if(!b)return;b.disabled=true;b.textContent="⏳ AI...";const unm=results.filter(r=>r.conf==="none"||r.conf==="low").slice(0,5);const nd=unm.map((r,i)=>"[NS-"+i+"] Item:"+r.ns["Item Name/Number"]+" Display:"+r.ns["Display Name"]+" Desc:"+String(r.ns["Long Description"]||"").slice(0,120)).join("\n");const sd=supData.map((s,i)=>"[SUP-"+i+"] Part:"+s["Manufacturer Part Number"]+" Name:"+String(s["Item Name"]).slice(0,80)).join("\n");try{const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:"Match NS→Supplier. 1:1. Match by model#,tonnage,connection,desc.\n\nNS:\n"+nd+"\n\nSUP:\n"+sd+"\n\nReturn ONLY JSON:[{\"ns_index\":<n>,\"sup_index\":<n|null>,\"confidence\":\"high\"|\"medium\"|\"low\",\"reason\":\"...\"}]"}]})});const data=await resp.json();const text=(data.content||[]).map(c=>c.text||"").join("");const ai=JSON.parse(text.replace(/```json|```/g,"").trim());for(const a of ai){const t=unm[a.ns_index];if(t&&a.sup_index!==null){const idx=results.findIndex(r=>r.ni===t.ni);if(idx>=0){results[idx].sup={...supData[a.sup_index],_i:a.sup_index};results[idx].conf=a.confidence;results[idx].score=a.confidence==="high"?80:55;results[idx].sig.push("AI: "+a.reason);results[idx].status="matched";results[idx].remarks="Matched - AI";}}}}catch(e){console.error(e);}renderAll();saveSession();}
+
+/* ═══ STYLED EXPORT ═══ */
+function doExport(){const wb=XLSX.utils.book_new();const cn=vendor||"Vendor";const matched=results.filter(r=>r.status==="matched"),unmNs=results.filter(r=>r.status==="unmatched");const hC=matched.filter(r=>r.conf==="high").length,mC=matched.filter(r=>r.conf==="medium").length,lC=matched.filter(r=>r.conf==="low").length;function bdr(){return{top:{style:"thin",color:{rgb:"C0C0C0"}},bottom:{style:"thin",color:{rgb:"C0C0C0"}},left:{style:"thin",color:{rgb:"C0C0C0"}},right:{style:"thin",color:{rgb:"C0C0C0"}}};}const S={ny:{fill:{fgColor:{rgb:"1B2A4A"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",vertical:"center"}},nT:{fill:{fgColor:{rgb:"1B2A4A"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},gd:{fill:{fgColor:{rgb:"D4A843"}},font:{bold:true,color:{rgb:"1B2A4A"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},gH:{fill:{fgColor:{rgb:"F5E6B8"}},font:{bold:true,color:{rgb:"1B2A4A"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},nH:{fill:{fgColor:{rgb:"243658"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},grH:{fill:{fgColor:{rgb:"388E3C"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},grT:{fill:{fgColor:{rgb:"2D8F5E"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},d:{font:{name:"Arial",sz:9,color:{rgb:"1B2A4A"}},border:bdr()},da:{font:{name:"Arial",sz:9,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"F0F4F8"}},border:bdr()},cH:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"E8F5E9"}},border:bdr(),alignment:{horizontal:"center"}},cM:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"FFF8E1"}},border:bdr(),alignment:{horizontal:"center"}},cL:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"FFF3E0"}},border:bdr(),alignment:{horizontal:"center"}}};function sc(ws,ref,val,style){if(!ws[ref])ws[ref]={};ws[ref].v=val;ws[ref].t=typeof val==="number"?"n":"s";ws[ref].s=style;}
+const nsCols=Object.keys(nsData[0]),supCols=["Manufacturer Part Number","Manufacturer Name","Brand Name","Length (in.)","Width (in.)","Height (in.)","Weight (LBS)","Category","Item Name","Marketing Description","Item Feature 1","Item Feature 2","Item Feature 3","Item Feature 4","Item Feature 5","Image name/URL"],infoCols=["Match Score","Confidence","Match Criteria","Remarks"],gI=nsCols.length,sS=gI+1,iS=sS+supCols.length,tC=iS+infoCols.length;
+const mD=[];mD.push(new Array(tC).fill(""));mD[0][0]="Netsuite";mD[0][sS]="Supplier";mD[0][iS]="Match Details";mD.push([...nsCols,"",...supCols,...infoCols]);matched.forEach(r=>{mD.push([...nsCols.map(c=>r.ns[c]||""),"",...supCols.map(c=>r.sup?.[c]||""),Math.round(r.score*10)/10,r.conf.charAt(0).toUpperCase()+r.conf.slice(1),r.sig.join("; "),r.remarks]);});
+const ws1=XLSX.utils.aoa_to_sheet(mD);ws1["!merges"]=[{s:{r:0,c:0},e:{r:0,c:nsCols.length-1}},{s:{r:0,c:sS},e:{r:0,c:sS+supCols.length-1}},{s:{r:0,c:iS},e:{r:0,c:tC-1}}];for(let c=0;c<nsCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:0,c}),"",S.nT);sc(ws1,"A1","Netsuite",S.nT);for(let c=sS;c<sS+supCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:0,c}),"",S.gd);sc(ws1,XLSX.utils.encode_cell({r:0,c:sS}),"Supplier",S.gd);for(let c=iS;c<tC;c++)sc(ws1,XLSX.utils.encode_cell({r:0,c}),"",S.grT);sc(ws1,XLSX.utils.encode_cell({r:0,c:iS}),"Match Details",S.grT);for(let c=0;c<nsCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:1,c}),nsCols[c],S.nH);for(let c=0;c<supCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:1,c:sS+c}),supCols[c],S.gH);for(let c=0;c<infoCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:1,c:iS+c}),infoCols[c],S.grH);matched.forEach((r,ri)=>{const row=ri+2;const ds=ri%2===1?S.da:S.d;for(let c=0;c<tC;c++){if(c===gI)continue;const ref=XLSX.utils.encode_cell({r:row,c});if(ws1[ref])ws1[ref].s=ds;}const cRef=XLSX.utils.encode_cell({r:row,c:iS+1});if(ws1[cRef])ws1[cRef].s=r.conf==="high"?S.cH:r.conf==="medium"?S.cM:S.cL;});ws1["!cols"]=Array.from({length:tC},(_, c)=>c===gI?{wch:2}:["Long Description","Display Name","Item Name","Marketing Description","Match Criteria"].includes(c<nsCols.length?nsCols[c]:c>=iS?infoCols[c-iS]:supCols[c-sS])?{wch:45}:{wch:15});
+XLSX.utils.book_append_sheet(wb,ws1,"Matched");
+const uSC=["Manufacturer Part Number","Manufacturer Name","Brand Name","Length (in.)","Width (in.)","Height (in.)","Weight (LBS)","Category","Item Name","Marketing Description","Item Feature 1","Item Feature 2","Item Feature 3","Item Feature 4","Item Feature 5","Image name/URL","Working Load limit (tons)","Wire Rope Size"];const usD=[["Unmatched Supplier"],uSC,...unmSup.map(u=>uSC.map(c=>u.sup[c]||""))];const ws2=XLSX.utils.aoa_to_sheet(usD);ws2["!merges"]=[{s:{r:0,c:0},e:{r:0,c:uSC.length-1}}];for(let c=0;c<uSC.length;c++)sc(ws2,XLSX.utils.encode_cell({r:0,c}),"",S.gd);sc(ws2,"A1","Unmatched Supplier",S.gd);for(let c=0;c<uSC.length;c++)sc(ws2,XLSX.utils.encode_cell({r:1,c}),uSC[c],S.gH);for(let ri=0;ri<unmSup.length;ri++){const ds=ri%2===0?S.d:S.da;for(let c=0;c<uSC.length;c++){const ref=XLSX.utils.encode_cell({r:ri+2,c});if(ws2[ref])ws2[ref].s=ds;}}ws2["!cols"]=uSC.map(n=>({wch:["Item Name","Marketing Description"].includes(n)?50:n==="Manufacturer Part Number"?22:16}));XLSX.utils.book_append_sheet(wb,ws2,"Unmatched Supplier");
+const unD=[["Unmatched Netsuite"],nsCols,...unmNs.map(r=>nsCols.map(c=>r.ns[c]||""))];const ws3=XLSX.utils.aoa_to_sheet(unD);ws3["!merges"]=[{s:{r:0,c:0},e:{r:0,c:nsCols.length-1}}];for(let c=0;c<nsCols.length;c++)sc(ws3,XLSX.utils.encode_cell({r:0,c}),"",S.nT);sc(ws3,"A1","Unmatched Netsuite",S.nT);for(let c=0;c<nsCols.length;c++)sc(ws3,XLSX.utils.encode_cell({r:1,c}),nsCols[c],S.nH);for(let ri=0;ri<unmNs.length;ri++){const ds=ri%2===0?S.d:S.da;for(let c=0;c<nsCols.length;c++){const ref=XLSX.utils.encode_cell({r:ri+2,c});if(ws3[ref])ws3[ref].s=ds;}}ws3["!cols"]=nsCols.map(n=>({wch:["Long Description","Display Name"].includes(n)?45:16}));XLSX.utils.book_append_sheet(wb,ws3,"Unmatched Netsuite");
+XLSX.writeFile(wb,"MAGN_"+cn.replace(/[^a-zA-Z0-9]/g,"_")+"_Matching.xlsx");}
+function esc(s){const d=document.createElement('div');d.textContent=String(s||"");return d.innerHTML;}
+
+/* ═══ BOOT ═══ */
+renderVendorSelector();
+</script>
+</body>
+</html>
