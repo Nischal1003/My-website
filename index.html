@@ -1257,6 +1257,8 @@ function togglePwdVisibility(){
 
 async function showDashboard(){
   document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('login-screen').style.display='';
+  document.getElementById('choice-screen').classList.add('hidden');
   // Show loading overlay while fetching data
   const loadingEl=document.createElement('div');
   loadingEl.id='post-login-loader';
@@ -2930,6 +2932,7 @@ document.getElementById('snapshot-date').value=TODAY();
   }
 
   // Logged in — load data
+  document.getElementById('choice-screen').classList.add('hidden');
   document.getElementById('boot-bar').style.width='40%';
   await loadData();
   document.getElementById('boot-bar').style.width='80%';
