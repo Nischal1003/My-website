@@ -79,8 +79,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .tbar{display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:var(--surface);border-radius:10px;border:1px solid var(--border);}
 .tab{padding:7px 16px;border-radius:7px;border:none;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--muted);transition:all 0.12s;}
 .tab:hover{color:var(--text);background:var(--surface2);}.tab.act{background:var(--brand);color:#fff;}
-.tbar select,.tbar input[type="text"]{padding:7px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:12px;outline:none;}
-.tbar input[type="text"]{width:170px;}.tbar input:focus,.tbar select:focus{border-color:var(--accent);}
+.tbar select,.tbar input[type="text"],.tbar input[type="search"]{padding:7px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:12px;outline:none;font-family:'Inter',sans-serif;}
+.tbar input[type="text"],.tbar input[type="search"]{width:170px;}.tbar input:focus,.tbar select:focus{border-color:var(--accent);}
 .tbar input::placeholder{color:var(--muted2);}.spacer{flex:1;}
 .mr{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:6px;overflow:hidden;transition:box-shadow 0.15s;}
 .mr:hover{box-shadow:var(--shadow-md);}
@@ -255,7 +255,7 @@ async function saveSession(){
   showSync('saving');
   version++;
   const payload={vendor,version,lastModified:new Date().toISOString(),nsData,supData,
-    results:results?results.map(r=>({ni:r.ni,ns:r.ns,sup:r.sup,score:r.score,conf:r.conf,sig:r.sig,disc:r.disc,status:r.status,remarks:r.remarks,manual:r.manual||false,_prev:r._prev||null})):null,
+    results:results?results.map(r=>({ni:r.ni,ns:r.ns,sup:r.sup,score:r.score,conf:r.conf,sig:r.sig,disc:r.disc,status:r.status,remarks:r.remarks,manual:r.manual||false,_prev:r._prev||null,candidates:r.candidates||[]})):null,
     unmSup:unmSup?unmSup.map(u=>({sup:u.sup,idx:u.idx,cat:u.cat})):[]
   };
   try{await sbSet(sbKey(vendor),payload);showSync('ok');}catch(e){showSync('err');}
@@ -283,6 +283,7 @@ function startSync(){
         console.log('[MAGN] Remote update detected, reloading... (remote v'+d.version+' > local v'+version+')');
         version=d.version;
         nsData=d.nsData;supData=d.supData;results=d.results;unmSup=d.unmSup||[];
+        recalcUnmSup();
         if(results)renderAll();
         showSync('ok');
       }
@@ -415,6 +416,7 @@ function showResultsView(){
   document.getElementById('exp-wrap').style.display='block';
   document.getElementById('back-vendor-btn').style.display='inline-flex';
   document.getElementById('htag').textContent='MAGN · '+vendor;
+  recalcUnmSup();
   renderAll();
 }
 
@@ -447,24 +449,108 @@ function ntx(r){return["Display Name","Long Description","Item Name/Number","SKU
 function stx(r){return["Item Name","Marketing Description","Manufacturer Part Number"].map(c=>{const v=r[c];return(v!=null&&String(v).trim()!==''&&String(v)!=='nan')?String(v):'';}).filter(Boolean).join(" ");}
 
 function matchAll(){
+  // Step 1: Preprocess all items
   const np=nsData.map((n,i)=>{const t=ntx(n);return{i,m:xM(t),ton:xT(t),con:xC(t),cat:xCat(t),tok:tok(t),wt:parseFloat(n["Weight"])||0};});
   const sp=supData.map((s,i)=>{const t=stx(s);return{i,m:xM(t),ton:xT(t),con:xC(t),cat:xCat(t),tok:tok(t),wt:parseFloat(s["Weight (LBS)"])||0};});
-  const cands=[];
-  for(const n of np){for(const s of sp){let sc=0;const sig=[];const mo=n.m.filter(m=>s.m.includes(m));if(mo.length){sc+=50;sig.push("Model: "+mo.join(", "));}if(n.ton&&s.ton&&Math.abs(n.ton-s.ton)<0.01){sc+=15;sig.push("Tonnage: "+n.ton+"T");}if(n.con&&s.con&&n.con===s.con){sc+=15;sig.push("Connection: "+n.con);}if(n.cat&&s.cat&&n.cat===s.cat){sc+=10;sig.push("Category: "+n.cat);}const ds=jac(n.tok,s.tok);sc+=ds*20;if(ds>0.15)sig.push("Desc: "+(ds*100).toFixed(0)+"%");if(n.wt>0&&s.wt>0&&Math.abs(n.wt-s.wt)/Math.max(n.wt,s.wt)<0.1){sc+=5;sig.push("Wt match");}if(sc>=20)cands.push({ni:n.i,si:s.i,score:sc,sig});}}
-  cands.sort((a,b)=>b.score-a.score);
-  const nu=new Set(),su=new Set(),am={};
-  for(const c of cands){if(nu.has(c.ni)||su.has(c.si))continue;am[c.ni]=c;nu.add(c.ni);su.add(c.si);}
+
+  // Step 2: For EACH NS item, compute ALL candidates with score >= 15
+  const allCands={};// keyed by NS index
+  for(let i=0;i<nsData.length;i++){
+    const n=np[i]; const cands=[];
+    for(const s of sp){
+      let sc=0;const sig=[];
+      const mo=n.m.filter(m=>s.m.includes(m));if(mo.length){sc+=50;sig.push("Model: "+mo.join(", "));}
+      if(n.ton&&s.ton&&Math.abs(n.ton-s.ton)<0.01){sc+=15;sig.push("Tonnage: "+n.ton+"T");}
+      if(n.con&&s.con&&n.con===s.con){sc+=15;sig.push("Connection: "+n.con);}
+      if(n.cat&&s.cat&&n.cat===s.cat){sc+=10;sig.push("Category: "+n.cat);}
+      const ds=jac(n.tok,s.tok);sc+=ds*20;if(ds>0.15)sig.push("Desc: "+(ds*100).toFixed(0)+"%");
+      if(n.wt>0&&s.wt>0&&Math.abs(n.wt-s.wt)/Math.max(n.wt,s.wt)<0.1){sc+=5;sig.push("Wt match");}
+      if(sc>=15)cands.push({si:s.i,score:sc,sig});
+    }
+    cands.sort((a,b)=>b.score-a.score);
+    allCands[i]=cands;
+  }
+
+  // Step 3: Collect all auto-match eligible pairs (best>=70, gap to 2nd >=40)
+  const autoEligible=[];// {ni, si, score, sig}
+  for(let i=0;i<nsData.length;i++){
+    const cands=allCands[i];
+    if(!cands.length)continue;
+    const best=cands[0]; const secondBest=cands[1];
+    const gap=secondBest?(best.score-secondBest.score):999;
+    if(best.score>=70 && gap>=40){
+      autoEligible.push({ni:i,si:best.si,score:best.score,sig:best.sig});
+    }
+  }
+
+  // Step 4: Greedy 1:1 assignment — highest score first, no supplier used twice
+  autoEligible.sort((a,b)=>b.score-a.score);
+  const claimedSup=new Set();// supplier indices already auto-matched
+  const claimedNS=new Set();// NS indices already auto-matched
+  const autoMatches={};// ni -> {si, score, sig}
+
+  for(const ae of autoEligible){
+    if(claimedSup.has(ae.si)||claimedNS.has(ae.ni))continue;
+    autoMatches[ae.ni]=ae;
+    claimedSup.add(ae.si);
+    claimedNS.add(ae.ni);
+  }
+
+  // Step 5: Build results array
   const res=[];
-  for(let i=0;i<nsData.length;i++){const ns=nsData[i],a=am[i];if(a){const sup=supData[a.si],conf=a.score>=65?"high":a.score>=40?"medium":"low",disc=[];const nw=parseFloat(ns["Weight"])||0,sw=parseFloat(sup["Weight (LBS)"])||0;if(nw>0&&sw>0&&Math.abs(nw-sw)/Math.max(nw,sw)>0.1)disc.push("Wt: NS="+nw+" vs SUP="+sw);res.push({ns,ni:i,sup:{...sup,_i:a.si},score:a.score,conf,sig:a.sig,disc,status:"matched",remarks:"Matched"+(disc.length?" - "+disc.join(", "):"")});}else{res.push({ns,ni:i,sup:null,score:0,conf:"none",sig:[],disc:[],status:"unmatched",remarks:""});}}
-  unmSup=supData.map((s,i)=>({sup:s,idx:i,cat:xCat(stx(s))})).filter(s=>!su.has(s.idx));
+  for(let i=0;i<nsData.length;i++){
+    const cands=allCands[i];
+    const am=autoMatches[i];
+    if(am){
+      // Auto-matched (1:1 verified)
+      const sup=supData[am.si]; const disc=[];
+      const nw=parseFloat(nsData[i]["Weight"])||0,sw=parseFloat(sup["Weight (LBS)"])||0;
+      if(nw>0&&sw>0&&Math.abs(nw-sw)/Math.max(nw,sw)>0.1)disc.push("Wt: NS="+nw+" vs SUP="+sw);
+      res.push({ns:nsData[i],ni:i,sup:{...sup,_i:am.si},score:am.score,conf:"high",sig:am.sig,disc,
+        status:"matched",candidates:cands,remarks:"Auto-matched",manual:false,_prev:null});
+    } else if(cands.length>0){
+      res.push({ns:nsData[i],ni:i,sup:null,score:0,conf:"none",sig:[],disc:[],
+        status:"review",candidates:cands,remarks:"",manual:false,_prev:null});
+    } else {
+      res.push({ns:nsData[i],ni:i,sup:null,score:0,conf:"none",sig:[],disc:[],
+        status:"unmatched",candidates:[],remarks:"",manual:false,_prev:null});
+    }
+  }
+
+  // Step 6: Verify counts (debug safety net)
+  const matchedSupIds=new Set(res.filter(r=>r.status==="matched"&&r.sup).map(r=>r.sup._i));
+  console.log('[MAGN] Auto-matched:',matchedSupIds.size,'unique suppliers from',res.filter(r=>r.status==="matched").length,'matched NS items');
+  if(matchedSupIds.size!==res.filter(r=>r.status==="matched").length){
+    console.error('[MAGN] 1:1 VIOLATION DETECTED! Matched NS:',res.filter(r=>r.status==="matched").length,'Unique sup:',matchedSupIds.size);
+  }
+
+  recalcUnmSup();
   return res;
+}
+
+/* Helper: get set of all currently matched supplier indices */
+function getMatchedSupSet(){
+  const s=new Set();
+  if(!results)return s;
+  results.forEach(r=>{if(r.status==="matched"&&r.sup&&r.sup._i!=null)s.add(r.sup._i);});
+  return s;
+}
+/* Find which NS item a supplier is matched to */
+function getMatchedToNS(si){
+  if(!results)return null;
+  const r=results.find(x=>x.status==="matched"&&x.sup&&x.sup._i===si);
+  return r?r:null;
+}
+
+function recalcUnmSup(){
+  const ms=getMatchedSupSet();
+  unmSup=supData.map((s,i)=>({sup:s,idx:i,cat:xCat(stx(s))})).filter(s=>!ms.has(s.idx));
 }
 
 async function runMatch(){
   const b=document.getElementById('rbtn');b.disabled=true;b.textContent='⏳ Processing...';
   setTimeout(async()=>{
     results=matchAll();
-    // Update vendor index
     const vendors=await loadVendorIndex();
     const vi=vendors.find(v=>v.name.toLowerCase()===vendor.toLowerCase());
     if(vi){vi.lastModified=new Date().toISOString();vi.nsCount=nsData.length;vi.supCount=supData.length;vi.matched=results.filter(r=>r.status==="matched").length;}
@@ -476,104 +562,366 @@ async function runMatch(){
   },50);
 }
 
-/* ═══ RENDERING ═══ */
-function renderAll(){renderSum();renderConf();renderTbar();renderList();renderUnm();}
-function renderSum(){const m=results.filter(r=>r.status==="matched").length,t=results.length,d=results.filter(r=>r.disc.length>0).length;document.getElementById('sum').innerHTML='<div class="sgrid">'+sC("Netsuite",t,"Input","sn")+sC("Supplier",supData.length,"Catalog","sn")+sC("Matched",m,(m/t*100).toFixed(0)+"% of NS","sg")+sC("Unmatched NS",t-m,(((t-m)/t)*100).toFixed(0)+"% of NS","sr")+sC("Unmatched Sup",unmSup.length,((unmSup.length/supData.length)*100).toFixed(0)+"% of Sup","so")+sC("Discrepancies",d,d>0?(d/m*100).toFixed(0)+"%":"None","sy")+'</div>';}
-function sC(l,v,s,c){const cm={"sg":"var(--green)","sr":"var(--red)","so":"var(--orange)","sy":"var(--amber)","sn":"var(--brand)"};return'<div class="sc '+c+'"><div class="scl">'+l+'</div><div class="scv" style="color:'+cm[c]+'">'+v+'</div><div class="scs">'+s+'</div></div>';}
-function renderConf(){const h=results.filter(r=>r.conf==="high").length,m=results.filter(r=>r.conf==="medium").length,l=results.filter(r=>r.conf==="low").length,n=results.filter(r=>r.conf==="none").length;document.getElementById('cbar').innerHTML=cI("ch","High",h)+cI("cm","Medium",m)+cI("cl","Low",l)+cI("cn","None",n)+(n>0||l>0?'<button class="btn btn-out" style="margin-left:auto;font-size:11px;padding:6px 14px" onclick="runAI()" id="ai-btn">🤖 AI Match</button>':'');}
-function cI(c,l,n){return'<div class="ci"><div class="cd '+c+'"></div><div class="ct">'+l+'<b>'+n+'</b></div></div>';}
-function renderTbar(){const m=results.filter(r=>r.status==="matched").length,u=results.filter(r=>r.status==="unmatched").length,d=results.filter(r=>r.disc.length>0).length,mu=results.filter(r=>r._prev&&r._prev.sup).length;document.getElementById('tbar').innerHTML=tB("all","All ("+results.length+")")+tB("matched","Matched ("+m+")")+tB("unmatched","Unmatched NS ("+u+")")+tB("discrepancies","Disc ("+d+")")+(mu?tB("manualunm","⟲ Undoable ("+mu+")"):'')+ tB("unmatchedsup","Unmatched Sup ("+unmSup.length+")")+'<div class="spacer"></div><select onchange="curConf=this.value;renderList()"><option value="all">All Confidence</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="none">None</option></select><input type="text" placeholder="Search..." oninput="curSearch=this.value;renderList()"><button class="btn btn-ghost" onclick="reUpload()">↑ Re-upload Files</button>';}
-function tB(k,l){return'<button class="tab'+(curTab===k?' act':'')+'" onclick="curTab=\''+k+'\';renderTbar();renderList()">'+l+'</button>';}
-function fR(){let r=results;if(curTab==="matched")r=r.filter(x=>x.status==="matched");if(curTab==="unmatched")r=r.filter(x=>x.status==="unmatched");if(curTab==="discrepancies")r=r.filter(x=>x.disc.length>0);if(curTab==="unmatchedsup")return[];if(curConf!=="all")r=r.filter(x=>x.conf===curConf);if(curSearch){const q=curSearch.toLowerCase();r=r.filter(x=>[x.ns["Display Name"],x.ns["Item Name/Number"],x.ns["SKU"],x.sup?.["Item Name"],x.sup?.["Manufacturer Part Number"]].some(v=>String(v||"").toLowerCase().includes(q)));}return r;}
-function renderList(){if(curTab==="unmatchedsup"){rUS();return;}if(curTab==="manualunm"){rMU();return;}document.getElementById('usup').innerHTML='';const f=fR();if(!f.length){document.getElementById('rlist').innerHTML='<div class="empty">No items match filters</div>';return;}document.getElementById('rlist').innerHTML=f.map(rRow).join("");}
-
-/* ═══ MANUALLY UNMATCHED TAB ═══ */
-function rMU(){
-  document.getElementById('usup').innerHTML='';
-  const mu=results.filter(r=>r._prev&&r._prev.sup);
-  if(!mu.length){document.getElementById('rlist').innerHTML='<div class="empty">No manually unmatched items. When you unmatch something, it will appear here with full details so you can restore it.</div>';return;}
-  document.getElementById('rlist').innerHTML=mu.map(r=>{
-    const ns=r.ns, prev=r._prev;
-    const nD=esc(ns["Display Name"]||ns["Item Name/Number"]);
-    const sD=esc(prev.sup["Item Name"]||"");
-    const sM=esc(prev.sup["Manufacturer Part Number"]||"");
-    const bc={high:"bg",medium:"by",low:"bo",none:"br"}[prev.conf||"none"];
-
-    // Build detail of what was matched before
-    let detailRows='';
-    [["Part#",prev.sup["Manufacturer Part Number"]],["Name",prev.sup["Item Name"]],["Category",prev.sup["Category"]],["Weight",prev.sup["Weight (LBS)"]],["WLL",prev.sup["Working Load limit (tons)"]?prev.sup["Working Load limit (tons)"]+"T":"—"]].forEach(([k,v])=>{
-      detailRows+='<div class="dr"><span class="dk">'+k+'</span><span class="dv">'+esc(String(v||"—"))+'</span></div>';
-    });
-    const sigBadges=(prev.sig||[]).map(s=>'<span class="sig">'+esc(s)+'</span>').join('');
-
-    return `<div class="mr bn" style="border-left-color:var(--amber);">
-      <div class="mrh" onclick="togR(${r.ni})" style="background:rgba(217,119,6,0.03);">
-        <span class="mrn2">#${r.ni+1}</span>
-        <div class="mri">
-          <div class="mn">${nD}</div>
-          <div class="mm">${esc(ns["SKU"])} · ${esc(ns["Category Group"])}</div>
-        </div>
-        <span class="mra" style="font-size:18px;color:var(--amber);">⟲</span>
-        <div class="mri">
-          <div class="mn" style="color:var(--muted);text-decoration:line-through;">${sD}</div>
-          <div class="mm">${sM}</div>
-        </div>
-        <div class="mrb">
-          <span class="badge by">WAS ${(prev.conf||"?").toUpperCase()}</span>
-          <span class="mrs">${(prev.score||0).toFixed(0)}</span>
-          <span class="badge bb">UNMATCHED</span>
-          <span class="mrx" id="arr-${r.ni}">▾</span>
-        </div>
-      </div>
-      <div class="mrd" id="det-${r.ni}">
-        <div class="dc" style="margin-top:14px;">
-          <div class="dcol">
-            <h4 class="dns">Netsuite Item</h4>
-            <div class="dr"><span class="dk">Item</span><span class="dv">${esc(ns["Item Name/Number"])}</span></div>
-            <div class="dr"><span class="dk">SKU</span><span class="dv">${esc(ns["SKU"])}</span></div>
-            <div class="dr"><span class="dk">Display</span><span class="dv">${esc(ns["Display Name"])}</span></div>
-            <div class="dr"><span class="dk">Category</span><span class="dv">${esc(ns["Category Group"])}</span></div>
-            <div class="dr"><span class="dk">Weight</span><span class="dv">${esc(ns["Weight"])}</span></div>
-            <div class="dd">${esc(String(ns["Long Description"]||"").slice(0,300))}</div>
-          </div>
-          <div class="dcol" style="border-color:var(--amber);border-style:dashed;">
-            <h4 style="color:var(--amber);">Previous Supplier Match</h4>
-            ${detailRows}
-            ${prev.sup["Item Feature 1"]?'<div class="dd"><b>Features:</b> '+esc([prev.sup["Item Feature 1"],prev.sup["Item Feature 2"],prev.sup["Item Feature 3"],prev.sup["Item Feature 4"],prev.sup["Item Feature 5"]].filter(x=>x&&String(x)!=="nan"&&x!=="").join(" · "))+'</div>':''}
-          </div>
-        </div>
-        <div class="sb" style="margin-top:10px">${sigBadges}</div>
-        <div style="display:flex;gap:8px;margin-top:14px;align-items:center;">
-          <button class="btn btn-gold" style="font-size:12px;padding:8px 20px;" onclick="restoreMatch(${r.ni})">⟲ Restore This Match</button>
-          <button class="btn btn-out" style="font-size:11px;padding:6px 14px;" onclick="togP(${r.ni})">Match to Different Supplier</button>
-          <span style="font-size:11px;color:var(--muted);margin-left:8px;">Was: <b>${(prev.conf||"?")}</b> confidence · Score: <b>${(prev.score||0).toFixed(0)}</b></span>
-        </div>
-        <div class="pk" id="pk-${r.ni}"><input placeholder="Search supplier..." oninput="fP(${r.ni},this.value)"><div id="pl-${r.ni}">${rPI(supData.slice(0,15))}</div></div>
-      </div>
-    </div>`;
-  }).join('');
+/* ═══ ACTIONS ═══ */
+function confirmMatch(ni,si){
+  // Match NS item ni to supplier si
+  const ms=getMatchedSupSet();
+  if(ms.has(si)){
+    const owner=getMatchedToNS(si);
+    if(owner)alert('This supplier item is already matched to NS item #'+(owner.ni+1)+': '+(owner.ns["Display Name"]||owner.ns["Item Name/Number"])+'. Unmatch it there first.');
+    return;
+  }
+  const r=results[ni]; const sup=supData[si];
+  const cand=r.candidates.find(c=>c.si===si);
+  const disc=[];
+  const nw=parseFloat(r.ns["Weight"])||0,sw=parseFloat(sup["Weight (LBS)"])||0;
+  if(nw>0&&sw>0&&Math.abs(nw-sw)/Math.max(nw,sw)>0.1)disc.push("Wt: NS="+nw+" vs SUP="+sw);
+  r.sup={...sup,_i:si};r.score=cand?cand.score:100;r.conf=r.score>=65?"high":r.score>=40?"medium":"low";
+  r.sig=cand?cand.sig:["Manual match"];r.disc=disc;r.status="matched";r.manual=true;r.remarks="User confirmed";r._prev=null;
+  recalcUnmSup();renderAll();saveSession();
 }
-function rUS(){document.getElementById('rlist').innerHTML='';let f=unmSup;if(curSearch){const q=curSearch.toLowerCase();f=f.filter(u=>String(u.sup["Item Name"]||"").toLowerCase().includes(q)||String(u.sup["Manufacturer Part Number"]||"").toLowerCase().includes(q));}if(!f.length){document.getElementById('usup').innerHTML='<div class="empty">All supplier items matched</div>';return;}let h='<div class="us"><h3>Unmatched Supplier ('+f.length+')</h3><div class="ut"><div class="uth"><span>Part #</span><span>Item Name</span><span>Category</span><span>Weight</span></div><div class="utb">';f.forEach(u=>{h+='<div class="utr"><span style="font-size:11px;color:var(--text2)">'+esc(u.sup["Manufacturer Part Number"])+'</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(u.sup["Item Name"])+'</span><span style="color:var(--muted)">'+esc(u.cat)+'</span><span>'+u.sup["Weight (LBS)"]+'</span></div>';});h+='</div></div></div>';document.getElementById('usup').innerHTML=h;}
 
-function rRow(r){const ns=r.ns,sup=r.sup,nD=esc(ns["Display Name"]||ns["Item Name/Number"]),sD=sup?esc(sup["Item Name"]):'<i style="color:var(--muted)">No match</i>',sM=sup?esc(sup["Manufacturer Part Number"]):'',bc={high:"bg",medium:"by",low:"bo",none:"br"}[r.conf],bL={high:"bh",medium:"bm",low:"bl",none:"bn"}[r.conf];let badges='<span class="badge '+bc+'">'+r.conf.toUpperCase()+'</span><span class="mrs">'+r.score.toFixed(0)+'</span>';if(r.disc.length)badges+='<span class="badge br">⚠'+r.disc.length+'</span>';if(r.manual)badges+='<span class="badge bb">MANUAL</span>';return'<div class="mr '+bL+'"><div class="mrh" onclick="togR('+r.ni+')"><span class="mrn2">#'+(r.ni+1)+'</span><div class="mri"><div class="mn">'+nD+'</div><div class="mm">'+esc(ns["SKU"])+' · '+esc(ns["Category Group"])+'</div></div><span class="mra">'+(sup?"↔":"✕")+'</span><div class="mri"><div class="mn">'+sD+'</div><div class="mm">'+sM+'</div></div><div class="mrb">'+badges+'<span class="mrx" id="arr-'+r.ni+'">▾</span></div></div><div class="mrd" id="det-'+r.ni+'">'+rDet(r)+'</div></div>';}
-function rDet(r){const ns=r.ns,sup=r.sup;let h='<div class="dc"><div class="dcol"><h4 class="dns">Netsuite</h4>';[["Item",ns["Item Name/Number"]],["SKU",ns["SKU"]],["Display",ns["Display Name"]],["Category",ns["Category Group"]],["Weight",ns["Weight"]],["Cost",ns["Managed Cost"]?"$"+ns["Managed Cost"]:"—"]].forEach(([k,v])=>{h+='<div class="dr"><span class="dk">'+k+'</span><span class="dv">'+esc(String(v||"—").slice(0,120))+'</span></div>';});h+='<div class="dd">'+esc(String(ns["Long Description"]||"").slice(0,300))+'</div></div><div class="dcol"><h4 class="dsp">Supplier</h4>';if(sup)[["Part#",sup["Manufacturer Part Number"]],["Name",sup["Item Name"]],["Category",sup["Category"]],["Weight",sup["Weight (LBS)"]],["WLL",sup["Working Load limit (tons)"]?sup["Working Load limit (tons)"]+"T":"—"],["Rope",sup["Wire Rope Size"]||"—"]].forEach(([k,v])=>{h+='<div class="dr"><span class="dk">'+k+'</span><span class="dv">'+esc(String(v||"—").slice(0,120))+'</span></div>';});else h+='<div style="color:var(--muted);font-size:12px">No match found</div>';if(sup)h+='<div class="dd"><b>Features:</b> '+esc([sup["Item Feature 1"],sup["Item Feature 2"],sup["Item Feature 3"],sup["Item Feature 4"],sup["Item Feature 5"]].filter(x=>x&&String(x)!=='nan'&&x!=='').join(" · "))+'</div>';h+='</div></div><div class="sb">';r.sig.forEach(s=>{h+='<span class="sig">'+esc(s)+'</span>';});r.disc.forEach(d=>{h+='<span class="sig sigw">⚠ '+esc(d)+'</span>';});h+='</div><div class="ab"><button class="btn btn-out" style="font-size:11px;padding:6px 14px" onclick="togP('+r.ni+')">Manual Match</button>';if(sup)h+='<button class="btn btn-danger" style="font-size:11px;padding:6px 14px" onclick="unM('+r.ni+')">Unmatch</button>';h+='</div><div class="pk" id="pk-'+r.ni+'"><input placeholder="Search supplier..." oninput="fP('+r.ni+',this.value)"><div id="pl-'+r.ni+'">'+rPI(supData.slice(0,15))+'</div></div>';return h;}
-function rPI(items){return items.map(s=>'<div class="pki" onclick="dMM('+supData.indexOf(s)+',this)"><b>'+esc(s["Item Name"])+'</b><br><small>'+esc(s["Manufacturer Part Number"])+' · Wt: '+s["Weight (LBS)"]+' lbs</small></div>').join("");}
-function togR(i){const d=document.getElementById('det-'+i),a=document.getElementById('arr-'+i);if(!d)return;d.style.display=d.style.display==='block'?'none':'block';a.style.transform=d.style.display==='block'?'rotate(180deg)':'none';}
-function togP(i){const p=document.getElementById('pk-'+i);if(p)p.style.display=p.style.display==='block'?'none':'block';}
-function fP(ni,q){q=q.toLowerCase();const f=q?supData.filter(s=>String(s["Item Name"]||"").toLowerCase().includes(q)||String(s["Manufacturer Part Number"]||"").toLowerCase().includes(q)).slice(0,15):supData.slice(0,15);document.getElementById('pl-'+ni).innerHTML=rPI(f);}
-function dMM(si,el){const ni=parseInt(el.closest('.pk').id.replace('pk-',''));results[ni]._prev=null;results[ni].sup={...supData[si],_i:si};results[ni].status="matched";results[ni].conf="high";results[ni].score=100;results[ni].sig=["Manual match"];results[ni].disc=[];results[ni].manual=true;results[ni].remarks="Matched - Manual";renderAll();saveSession();}
+function manualMatchFromPicker(si,ni){
+  const ms=getMatchedSupSet();
+  if(ms.has(si)){
+    const owner=getMatchedToNS(si);
+    if(owner)alert('Already matched to NS #'+(owner.ni+1)+': '+(owner.ns["Display Name"]||owner.ns["Item Name/Number"]));
+    return;
+  }
+  const r=results[ni]; const sup=supData[si]; const disc=[];
+  const nw=parseFloat(r.ns["Weight"])||0,sw=parseFloat(sup["Weight (LBS)"])||0;
+  if(nw>0&&sw>0&&Math.abs(nw-sw)/Math.max(nw,sw)>0.1)disc.push("Wt: NS="+nw+" vs SUP="+sw);
+  r._prev=null;r.sup={...sup,_i:si};r.score=100;r.conf="high";r.sig=["Manual match"];r.disc=disc;
+  r.status="matched";r.manual=true;r.remarks="Matched - Manual";
+  recalcUnmSup();renderAll();saveSession();
+}
+
 function unM(ni){
-  // Save previous match for undo
   const r=results[ni];
   r._prev={sup:r.sup?JSON.parse(JSON.stringify(r.sup)):null,score:r.score,conf:r.conf,sig:[...r.sig],disc:[...r.disc],remarks:r.remarks};
-  r.sup=null;r.status="unmatched";r.conf="none";r.score=0;r.sig=[];r.disc=[];r.manual=true;r.remarks="Manually unmatched";
-  renderAll();saveSession();
+  r.sup=null;r.score=0;r.sig=[];r.disc=[];r.manual=true;r.remarks="Manually unmatched";
+  // Send to review if has candidates, otherwise unmatched
+  r.status=(r.candidates&&r.candidates.length>0)?"review":"unmatched";
+  r.conf="none";
+  recalcUnmSup();renderAll();saveSession();
 }
+
 function restoreMatch(ni){
   const r=results[ni];if(!r._prev||!r._prev.sup)return;
+  // Check if supplier is still free
+  const si=r._prev.sup._i;
+  const ms=getMatchedSupSet();
+  if(ms.has(si)){
+    const owner=getMatchedToNS(si);
+    if(owner)alert('Cannot restore — supplier now matched to NS #'+(owner.ni+1)+': '+(owner.ns["Display Name"]||owner.ns["Item Name/Number"]));
+    return;
+  }
   r.sup=r._prev.sup;r.score=r._prev.score;r.conf=r._prev.conf;r.sig=r._prev.sig;r.disc=r._prev.disc;r.remarks=r._prev.remarks;r.status="matched";r.manual=false;r._prev=null;
-  renderAll();saveSession();
+  recalcUnmSup();renderAll();saveSession();
 }
+
+function markNoMatch(ni){
+  const r=results[ni];
+  r.sup=null;r.status="unmatched";r.conf="none";r.score=0;r.sig=[];r.disc=[];r.manual=true;r.remarks="No match (user confirmed)";
+  recalcUnmSup();renderAll();saveSession();
+}
+
+/* ═══ RENDERING ═══ */
+function renderAll(){
+  // Preserve search state before re-rendering toolbar
+  const searchEl=document.getElementById('m-search');
+  const hadFocus=searchEl&&document.activeElement===searchEl;
+  const cursorPos=hadFocus?searchEl.selectionStart:0;
+  if(searchEl)curSearch=searchEl.value;// sync in case oninput didn't fire
+
+  renderSum();renderConf();renderTbar();renderList();renderUnm();
+
+  // Restore focus if user was typing
+  if(hadFocus){
+    const newEl=document.getElementById('m-search');
+    if(newEl){newEl.focus();newEl.setSelectionRange(cursorPos,cursorPos);}
+  }
+}
+
+function renderSum(){
+  // Always recalculate unmSup from current matched state to ensure accuracy
+  recalcUnmSup();
+  const m=results.filter(r=>r.status==="matched").length,rv=results.filter(r=>r.status==="review").length;
+  const un=results.filter(r=>r.status==="unmatched").length;
+  const t=results.length;
+  const d=results.filter(r=>r.status==="matched"&&r.disc.length>0).length;
+  // Validate: matched + review + unmatched must equal total NS
+  const nsCheck=m+rv+un;
+  // Validate: matched unique suppliers + unmSup must equal total supplier
+  const supCheck=(getMatchedSupSet().size)+unmSup.length;
+  const nsOk=nsCheck===t;
+  const supOk=supCheck===supData.length;
+  document.getElementById('sum').innerHTML='<div class="sgrid">'+
+    sC("Netsuite",t,"Input","sn")+sC("Supplier",supData.length,"Catalog","sn")+
+    sC("Matched",m,(m/t*100).toFixed(0)+"% confirmed","sg")+
+    sC("Review",rv,"Need your input","sy")+
+    sC("Unmatched NS",un,"No candidates","sr")+
+    sC("Unmatched Sup",unmSup.length,(100-getMatchedSupSet().size/supData.length*100).toFixed(0)+"% of Sup","so")+
+    '</div>'+
+    (!nsOk?'<div style="background:var(--red-l);border:1px solid rgba(220,38,38,0.2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:var(--red);">⚠ NS count error: '+m+'+'+rv+'+'+un+'='+nsCheck+' ≠ '+t+'</div>':'')+
+    (!supOk?'<div style="background:var(--red-l);border:1px solid rgba(220,38,38,0.2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:var(--red);">⚠ Supplier count error: '+getMatchedSupSet().size+' matched + '+unmSup.length+' unmatched = '+(getMatchedSupSet().size+unmSup.length)+' ≠ '+supData.length+'</div>':'');
+}
+function sC(l,v,s,c){const cm={"sg":"var(--green)","sr":"var(--red)","so":"var(--orange)","sy":"var(--amber)","sn":"var(--brand)"};return'<div class="sc '+c+'"><div class="scl">'+l+'</div><div class="scv" style="color:'+cm[c]+'">'+v+'</div><div class="scs">'+s+'</div></div>';}
+
+function renderConf(){
+  const m=results.filter(r=>r.status==="matched").length,rv=results.filter(r=>r.status==="review").length;
+  const un=results.filter(r=>r.status==="unmatched").length;
+  document.getElementById('cbar').innerHTML=
+    '<div class="ci"><div class="cd ch"></div><div class="ct">Matched<b>'+m+'</b></div></div>'+
+    '<div class="ci"><div class="cd cm"></div><div class="ct">Review<b>'+rv+'</b></div></div>'+
+    '<div class="ci"><div class="cd cn"></div><div class="ct">Unmatched<b>'+un+'</b></div></div>'+
+    (rv>0?'<span style="margin-left:auto;font-size:12px;color:var(--amber);font-weight:600;">⚠ '+rv+' items need your review</span>':'<span style="margin-left:auto;font-size:12px;color:var(--green);font-weight:600;">✓ All items reviewed</span>');
+}
+
+function renderTbar(){
+  const m=results.filter(r=>r.status==="matched").length;
+  const rv=results.filter(r=>r.status==="review").length;
+  const un=results.filter(r=>r.status==="unmatched").length;
+  const hasFilters=curSearch||curConf!=="all";
+  document.getElementById('tbar').innerHTML=
+    tB("all","All ("+results.length+")")+
+    tB("matched","✓ Matched ("+m+")")+
+    tB("review","⚡ Review ("+rv+")")+
+    tB("unmatched","✕ Unmatched ("+un+")")+
+    tB("unmatchedsup","Unmatched Sup ("+unmSup.length+")")+
+    '<div class="spacer"></div>'+
+    '<input type="search" id="m-search" placeholder="Search..." value="'+esc(curSearch)+'" oninput="doSearch(this.value)" onsearch="doSearch(this.value)">'+
+    '<button class="btn" id="m-clear-btn" style="background:var(--red-l);color:var(--red);border:1px solid rgba(220,38,38,0.2);font-size:11px;padding:6px 14px;display:'+(hasFilters?'inline-flex':'none')+';" onclick="clearAllFilters()">✕ Clear</button>'+
+    '<button class="btn btn-ghost" onclick="reUpload()">↑ Re-upload Files</button>';
+}
+function tB(k,l){return'<button class="tab'+(curTab===k?' act':'')+'" onclick="switchTab(\''+k+'\')">'+l+'</button>';}
+
+function switchTab(tab){
+  curTab=tab;
+  // Don't clear search when switching tabs — let user search across tabs
+  renderTbar();
+  renderList();
+}
+
+function doSearch(val){
+  const prev=curSearch;
+  curSearch=val||"";
+  // Update clear button
+  const clearBtn=document.getElementById('m-clear-btn');
+  if(clearBtn)clearBtn.style.display=(curSearch||curConf!=="all")?'inline-flex':'none';
+  // If search was cleared (had text → now empty), do full render to restore everything
+  if(prev&&!curSearch){
+    renderList();
+    renderUnm();
+  } else {
+    renderList();
+  }
+}
+
+function clearAllFilters(){
+  curSearch="";
+  curConf="all";
+  const el=document.getElementById('m-search');
+  if(el)el.value="";
+  // Full re-render to restore everything
+  renderTbar();
+  renderList();
+  renderUnm();
+}
+
+function fR(){
+  let r=results;
+  if(curTab==="matched")r=r.filter(x=>x.status==="matched");
+  else if(curTab==="review")r=r.filter(x=>x.status==="review");
+  else if(curTab==="unmatched")r=r.filter(x=>x.status==="unmatched");
+  else if(curTab==="unmatchedsup")return[];
+  if(curSearch){const q=curSearch.toLowerCase();r=r.filter(x=>[x.ns["Display Name"],x.ns["Item Name/Number"],x.ns["SKU"],x.sup?.["Item Name"],x.sup?.["Manufacturer Part Number"]].some(v=>String(v||"").toLowerCase().includes(q)));}
+  return r;
+}
+
+function renderList(){
+  if(curTab==="unmatchedsup"){rUS();return;}
+  document.getElementById('usup').innerHTML='';
+  const f=fR();
+  if(!f.length){document.getElementById('rlist').innerHTML='<div class="empty">'+(curTab==="review"?"All items have been reviewed — great job!":"No items match current filters")+'</div>';return;}
+  if(curTab==="review"||curTab==="all"){
+    document.getElementById('rlist').innerHTML=f.map(r=>r.status==="review"?rReviewRow(r):r.status==="matched"?rMatchedRow(r):rUnmatchedRow(r)).join("");
+  } else if(curTab==="matched"){
+    document.getElementById('rlist').innerHTML=f.map(rMatchedRow).join("");
+  } else if(curTab==="unmatched"){
+    document.getElementById('rlist').innerHTML=f.map(rUnmatchedRow).join("");
+  } else {
+    document.getElementById('rlist').innerHTML=f.map(r=>r.status==="review"?rReviewRow(r):r.status==="matched"?rMatchedRow(r):rUnmatchedRow(r)).join("");
+  }
+}
+
+/* ═══ MATCHED ROW ═══ */
+function rMatchedRow(r){
+  const ns=r.ns,sup=r.sup;
+  const nD=esc(ns["Display Name"]||ns["Item Name/Number"]);
+  const sD=sup?esc(sup["Item Name"]):'—';
+  const sM=sup?esc(sup["Manufacturer Part Number"]):'';
+  const bc={high:"bg",medium:"by",low:"bo",none:"br"}[r.conf];
+  let badges='<span class="badge '+bc+'">'+r.conf.toUpperCase()+'</span><span class="mrs">'+r.score.toFixed(0)+'</span>';
+  if(r.disc.length)badges+='<span class="badge br">⚠'+r.disc.length+'</span>';
+  if(r.manual)badges+='<span class="badge bb">MANUAL</span>';
+  return '<div class="mr bh"><div class="mrh" onclick="togR('+r.ni+')"><span class="mrn2">#'+(r.ni+1)+'</span><div class="mri"><div class="mn">'+nD+'</div><div class="mm">'+esc(ns["SKU"])+' · '+esc(ns["Category Group"])+'</div></div><span class="mra">↔</span><div class="mri"><div class="mn">'+sD+'</div><div class="mm">'+sM+'</div></div><div class="mrb">'+badges+'<span class="mrx" id="arr-'+r.ni+'">▾</span></div></div><div class="mrd" id="det-'+r.ni+'">'+rMatchedDet(r)+'</div></div>';
+}
+
+function rMatchedDet(r){
+  const ns=r.ns,sup=r.sup;
+  let h='<div class="dc"><div class="dcol"><h4 class="dns">Netsuite</h4>';
+  [["Item",ns["Item Name/Number"]],["SKU",ns["SKU"]],["Display",ns["Display Name"]],["Category",ns["Category Group"]],["Weight",ns["Weight"]],["Cost",ns["Managed Cost"]?"$"+ns["Managed Cost"]:"—"]].forEach(([k,v])=>{h+='<div class="dr"><span class="dk">'+k+'</span><span class="dv">'+esc(String(v||"—").slice(0,120))+'</span></div>';});
+  h+='<div class="dd">'+esc(String(ns["Long Description"]||"").slice(0,300))+'</div></div>';
+  h+='<div class="dcol"><h4 class="dsp">Matched Supplier</h4>';
+  if(sup){[["Part#",sup["Manufacturer Part Number"]],["Name",sup["Item Name"]],["Category",sup["Category"]],["Weight",sup["Weight (LBS)"]],["WLL",sup["Working Load limit (tons)"]?sup["Working Load limit (tons)"]+"T":"—"],["Rope",sup["Wire Rope Size"]||"—"]].forEach(([k,v])=>{h+='<div class="dr"><span class="dk">'+k+'</span><span class="dv">'+esc(String(v||"—").slice(0,120))+'</span></div>';});
+  h+='<div class="dd"><b>Features:</b> '+esc([sup["Item Feature 1"],sup["Item Feature 2"],sup["Item Feature 3"],sup["Item Feature 4"],sup["Item Feature 5"]].filter(x=>x&&String(x)!=='nan'&&x!=='').join(" · "))+'</div>';}
+  h+='</div></div>';
+  h+='<div class="sb">';r.sig.forEach(s=>{h+='<span class="sig">'+esc(s)+'</span>';});r.disc.forEach(d=>{h+='<span class="sig sigw">⚠ '+esc(d)+'</span>';});h+='</div>';
+  h+='<div class="ab"><button class="btn btn-danger" style="font-size:11px;padding:6px 14px" onclick="unM('+r.ni+')">Unmatch</button></div>';
+  return h;
+}
+
+/* ═══ REVIEW ROW (needs user action) ═══ */
+function rReviewRow(r){
+  const ns=r.ns;
+  const nD=esc(ns["Display Name"]||ns["Item Name/Number"]);
+  const topCand=r.candidates[0];
+  const topSup=topCand?supData[topCand.si]:null;
+  const candCount=r.candidates.length;
+  return '<div class="mr bm"><div class="mrh" onclick="togR('+r.ni+')"><span class="mrn2">#'+(r.ni+1)+'</span><div class="mri"><div class="mn">'+nD+'</div><div class="mm">'+esc(ns["SKU"])+' · '+esc(ns["Category Group"])+'</div></div><span class="mra" style="color:var(--amber)">⚡</span><div class="mri"><div class="mn" style="color:var(--amber)">'+candCount+' possible match'+(candCount>1?'es':'')+'</div><div class="mm">'+(topSup?'Best: '+esc(topSup["Item Name"])+' ('+topCand.score.toFixed(0)+')':'')+'</div></div><div class="mrb"><span class="badge by">REVIEW</span><span class="mrs">'+(topCand?topCand.score.toFixed(0):'0')+'</span><span class="mrx" id="arr-'+r.ni+'">▾</span></div></div><div class="mrd" id="det-'+r.ni+'" style="padding-bottom:0">'+rReviewDet(r)+'</div></div>';
+}
+
+function rReviewDet(r){
+  const ns=r.ns; const ms=getMatchedSupSet();
+
+  // NS summary block (compact, repeated as sticky reference)
+  function nsCard(){
+    return '<div style="background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:14px 16px;">'+
+      '<div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Netsuite Item</div>'+
+      '<div style="font-size:14px;font-weight:700;margin-bottom:4px;">'+esc(ns["Display Name"]||ns["Item Name/Number"])+'</div>'+
+      '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px;">'+
+        '<span style="font-size:11px;color:var(--muted);">SKU: <b style="color:var(--text)">'+esc(ns["SKU"])+'</b></span>'+
+        '<span style="font-size:11px;color:var(--muted);">Item: <b style="color:var(--text)">'+esc(ns["Item Name/Number"])+'</b></span>'+
+        '<span style="font-size:11px;color:var(--muted);">Cat: <b style="color:var(--text)">'+esc(ns["Category Group"])+'</b></span>'+
+        '<span style="font-size:11px;color:var(--muted);">Wt: <b style="color:var(--text)">'+(ns["Weight"]||"—")+'</b></span>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--text2);max-height:36px;overflow:auto;line-height:1.5;">'+esc(String(ns["Long Description"]||"").slice(0,200))+'</div>'+
+    '</div>';
+  }
+
+  let h='<div style="margin-top:14px;">';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">';
+  h+='<div style="font-size:13px;font-weight:700;color:var(--amber);">⚡ '+r.candidates.length+' Possible Match'+(r.candidates.length>1?'es':'')+' — Choose the correct one</div>';
+  h+='<div style="display:flex;gap:6px;">';
+  h+='<button class="btn btn-out" style="font-size:11px;padding:5px 12px" onclick="togP('+r.ni+')">Search Catalog</button>';
+  h+='<button class="btn btn-danger" style="font-size:11px;padding:5px 12px" onclick="markNoMatch('+r.ni+')">✕ No Match</button>';
+  if(r._prev&&r._prev.sup){h+='<button class="btn btn-gold" style="font-size:11px;padding:5px 12px" onclick="restoreMatch('+r.ni+')">⟲ Restore Previous</button>';}
+  h+='</div>';
+  h+='</div>';
+
+  // Each candidate: side-by-side NS vs SUP
+  r.candidates.forEach((c,ci)=>{
+    const s=supData[c.si]; const taken=ms.has(c.si); const owner=taken?getMatchedToNS(c.si):null;
+    const confLabel=c.score>=65?"HIGH":c.score>=40?"MEDIUM":"LOW";
+    const confColor=c.score>=65?"var(--green)":c.score>=40?"var(--amber)":"var(--orange)";
+    const confBg=c.score>=65?"var(--green-l)":c.score>=40?"var(--amber-l)":"var(--orange-l)";
+    const borderColor=taken?"var(--red)":ci===0?"var(--amber)":"var(--border)";
+
+    h+='<div style="border:1.5px solid '+borderColor+';border-radius:12px;margin-bottom:10px;overflow:hidden;'+(taken?'opacity:0.5;':'')+'">';
+
+    // Top bar: score + confidence + action
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:'+(ci===0&&!taken?'rgba(217,119,6,0.06)':'var(--surface2)')+';border-bottom:1px solid var(--border);">';
+    h+='<div style="display:flex;align-items:center;gap:2px;"><div style="width:44px;height:44px;border-radius:10px;background:'+confBg+';display:flex;align-items:center;justify-content:center;flex-direction:column;flex-shrink:0;"><div style="font-size:18px;font-weight:800;color:'+confColor+';line-height:1;">'+c.score.toFixed(0)+'</div><div style="font-size:8px;font-weight:700;color:'+confColor+';text-transform:uppercase;">'+confLabel+'</div></div></div>';
+    h+='<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;">'+esc(s["Item Name"])+'</div><div style="font-size:11px;color:var(--muted);">'+esc(s["Manufacturer Part Number"])+'</div></div>';
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;flex-shrink:0;">'+c.sig.map(sg=>'<span class="sig" style="font-size:10px;padding:2px 7px;">'+esc(sg)+'</span>').join('')+'</div>';
+    if(taken&&owner){
+      h+='<span class="badge br" style="font-size:9px;flex-shrink:0;">⚠ Matched to #'+(owner.ni+1)+'</span>';
+    } else {
+      h+='<button class="btn btn-gold" style="font-size:12px;padding:8px 20px;flex-shrink:0;white-space:nowrap;" onclick="confirmMatch('+r.ni+','+c.si+')">✓ Match This</button>';
+    }
+    h+='</div>';
+
+    // Side-by-side: NS left | SUP right
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">';
+
+    // NS side
+    h+='<div style="padding:12px 16px;border-right:1px solid var(--border);background:rgba(37,99,235,0.02);">';
+    h+='<div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/></svg>Netsuite</div>';
+    [["Item",ns["Item Name/Number"]],["SKU",ns["SKU"]],["Display",ns["Display Name"]],["Category",ns["Category Group"]],["Weight",ns["Weight"]],["Cost",ns["Managed Cost"]?"$"+ns["Managed Cost"]:"—"]].forEach(([k,v])=>{
+      h+='<div style="display:flex;font-size:11.5px;margin-bottom:3px;line-height:1.5;"><span style="color:var(--muted);width:55px;flex-shrink:0;font-weight:600;font-size:10px;text-transform:uppercase;">'+k+'</span><span style="color:var(--text);">'+esc(String(v||"—").slice(0,100))+'</span></div>';
+    });
+    h+='<div style="font-size:10.5px;color:var(--text2);margin-top:6px;max-height:40px;overflow:auto;border-top:1px solid var(--border);padding-top:6px;line-height:1.5;">'+esc(String(ns["Long Description"]||"").slice(0,200))+'</div>';
+    h+='</div>';
+
+    // SUP side
+    h+='<div style="padding:12px 16px;background:rgba(22,163,74,0.02);">';
+    h+='<div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;display:flex;align-items:center;gap:5px;"><svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Supplier</div>';
+    [["Part#",s["Manufacturer Part Number"]],["Name",s["Item Name"]],["Category",s["Category"]],["Weight",(s["Weight (LBS)"]||"—")+" lbs"],["WLL",s["Working Load limit (tons)"]?s["Working Load limit (tons)"]+"T":"—"],["Rope",s["Wire Rope Size"]||"—"]].forEach(([k,v])=>{
+      h+='<div style="display:flex;font-size:11.5px;margin-bottom:3px;line-height:1.5;"><span style="color:var(--muted);width:55px;flex-shrink:0;font-weight:600;font-size:10px;text-transform:uppercase;">'+k+'</span><span style="color:var(--text);">'+esc(String(v||"—").slice(0,100))+'</span></div>';
+    });
+    if(s["Item Feature 1"]&&String(s["Item Feature 1"])!=='nan'){
+      h+='<div style="font-size:10.5px;color:var(--text2);margin-top:6px;border-top:1px solid var(--border);padding-top:6px;line-height:1.5;max-height:40px;overflow:auto;"><b>Features:</b> '+esc([s["Item Feature 1"],s["Item Feature 2"],s["Item Feature 3"],s["Item Feature 4"],s["Item Feature 5"]].filter(x=>x&&String(x)!=="nan"&&x!=="").join(" · "))+'</div>';
+    }
+    h+='</div>';
+
+    h+='</div>'; // close grid
+    h+='</div>'; // close card
+  });
+
+  // Manual search picker
+  h+='<div class="pk" id="pk-'+r.ni+'" style="margin-bottom:16px;"><input placeholder="Search entire supplier catalog..." oninput="fP('+r.ni+',this.value)"><div id="pl-'+r.ni+'">'+rPI(r.ni,supData.slice(0,15))+'</div></div>';
+  h+='</div>';
+  return h;
+}
+
+/* ═══ UNMATCHED ROW ═══ */
+function rUnmatchedRow(r){
+  const ns=r.ns;
+  const nD=esc(ns["Display Name"]||ns["Item Name/Number"]);
+  const hasUndo=r._prev&&r._prev.sup;
+  return '<div class="mr bn"><div class="mrh" onclick="togR('+r.ni+')"><span class="mrn2">#'+(r.ni+1)+'</span><div class="mri"><div class="mn">'+nD+'</div><div class="mm">'+esc(ns["SKU"])+' · '+esc(ns["Category Group"])+'</div></div><span class="mra" style="color:var(--red)">✕</span><div class="mri"><div class="mn" style="color:var(--muted);font-style:italic;">No match</div><div class="mm">'+(hasUndo?'User confirmed no match':'No candidates found')+'</div></div><div class="mrb"><span class="badge br">NONE</span><span class="mrx" id="arr-'+r.ni+'">▾</span></div></div><div class="mrd" id="det-'+r.ni+'">'+rUnmatchedDet(r)+'</div></div>';
+}
+
+function rUnmatchedDet(r){
+  const ns=r.ns;
+  let h='<div class="dcol" style="margin-top:14px;margin-bottom:14px;"><h4 class="dns">Netsuite Item</h4>';
+  [["Item",ns["Item Name/Number"]],["SKU",ns["SKU"]],["Display",ns["Display Name"]],["Category",ns["Category Group"]],["Weight",ns["Weight"]]].forEach(([k,v])=>{h+='<div class="dr"><span class="dk">'+k+'</span><span class="dv">'+esc(String(v||"—").slice(0,120))+'</span></div>';});
+  h+='<div class="dd">'+esc(String(ns["Long Description"]||"").slice(0,300))+'</div></div>';
+  // Undo section
+  if(r._prev&&r._prev.sup){
+    const prev=r._prev;
+    h+='<div style="background:var(--amber-l);border:1px dashed var(--amber);border-radius:10px;padding:14px 16px;margin-bottom:12px;">';
+    h+='<div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:8px;">Previous Match (can restore)</div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;">';
+    h+='<span style="font-size:18px;font-weight:700;color:var(--amber);">'+prev.score.toFixed(0)+'</span>';
+    h+='<div style="flex:1"><div style="font-size:13px;font-weight:600;">'+esc(prev.sup["Item Name"])+'</div><div style="font-size:11px;color:var(--muted);">'+esc(prev.sup["Manufacturer Part Number"])+'</div></div>';
+    h+='<span class="badge by">WAS '+(prev.conf||"?").toUpperCase()+'</span>';
+    h+='<button class="btn btn-gold" style="font-size:11px;padding:6px 16px;" onclick="restoreMatch('+r.ni+')">⟲ Restore</button>';
+    h+='</div>';
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">'+(prev.sig||[]).map(s=>'<span class="sig">'+esc(s)+'</span>').join('')+'</div>';
+    h+='</div>';
+  }
+  // Manual match
+  h+='<div><button class="btn btn-out" style="font-size:11px;padding:6px 14px" onclick="togP('+r.ni+')">Search & Match Manually</button></div>';
+  h+='<div class="pk" id="pk-'+r.ni+'"><input placeholder="Search supplier catalog..." oninput="fP('+r.ni+',this.value)"><div id="pl-'+r.ni+'">'+rPI(r.ni,supData.slice(0,15))+'</div></div>';
+  return h;
+}
+
+/* ═══ UNMATCHED SUPPLIER TAB ═══ */
+function rUS(){document.getElementById('rlist').innerHTML='';let f=unmSup;if(curSearch){const q=curSearch.toLowerCase();f=f.filter(u=>String(u.sup["Item Name"]||"").toLowerCase().includes(q)||String(u.sup["Manufacturer Part Number"]||"").toLowerCase().includes(q));}if(!f.length){document.getElementById('usup').innerHTML='<div class="empty">All supplier items matched</div>';return;}let h='<div class="us"><h3>Unmatched Supplier ('+f.length+')</h3><div class="ut"><div class="uth"><span>Part #</span><span>Item Name</span><span>Category</span><span>Weight</span></div><div class="utb">';f.forEach(u=>{h+='<div class="utr"><span style="font-size:11px;color:var(--text2)">'+esc(u.sup["Manufacturer Part Number"])+'</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(u.sup["Item Name"])+'</span><span style="color:var(--muted)">'+esc(u.cat)+'</span><span>'+u.sup["Weight (LBS)"]+'</span></div>';});h+='</div></div></div>';document.getElementById('usup').innerHTML=h;}
+
+/* ═══ SHARED HELPERS ═══ */
+function rPI(ni,items){
+  const ms=getMatchedSupSet();
+  return items.map(s=>{
+    const si=supData.indexOf(s); const taken=ms.has(si); const owner=taken?getMatchedToNS(si):null;
+    return '<div class="pki" style="'+(taken?'opacity:0.5;':'')+'"><div onclick="'+(taken?'':'manualMatchFromPicker('+si+','+ni+')')+'" style="cursor:'+(taken?'not-allowed':'pointer')+'"><b>'+esc(s["Item Name"])+'</b><br><small>'+esc(s["Manufacturer Part Number"])+' · Wt: '+s["Weight (LBS)"]+' lbs</small>'+(taken&&owner?'<br><small style="color:var(--red)">⚠ Already matched to NS #'+(owner.ni+1)+'</small>':'')+'</div></div>';
+  }).join("");
+}
+function togR(i){const d=document.getElementById('det-'+i),a=document.getElementById('arr-'+i);if(!d)return;d.style.display=d.style.display==='block'?'none':'block';a.style.transform=d.style.display==='block'?'rotate(180deg)':'none';}
+function togP(i){const p=document.getElementById('pk-'+i);if(p)p.style.display=p.style.display==='block'?'none':'block';}
+function fP(ni,q){q=q.toLowerCase();const f=q?supData.filter(s=>String(s["Item Name"]||"").toLowerCase().includes(q)||String(s["Manufacturer Part Number"]||"").toLowerCase().includes(q)).slice(0,15):supData.slice(0,15);document.getElementById('pl-'+ni).innerHTML=rPI(ni,f);}
 function reUpload(){results=null;unmSup=[];curTab="all";curConf="all";curSearch="";showUploadView();
   ['nz','sz'].forEach(id=>document.getElementById(id).classList.remove('done'));
   document.getElementById('nl').textContent='Netsuite Items';document.getElementById('sl').textContent='Supplier Catalog';
@@ -581,14 +929,102 @@ function reUpload(){results=null;unmSup=[];curTab="all";curConf="all";curSearch=
   document.getElementById('ni').value='';document.getElementById('si').value='';document.getElementById('run-sec').style.display='none';}
 function renderUnm(){if(curTab==="unmatchedsup"){rUS();return;}document.getElementById('usup').innerHTML='';}
 
-async function runAI(){const b=document.getElementById('ai-btn');if(!b)return;b.disabled=true;b.textContent="⏳ AI...";const unm=results.filter(r=>r.conf==="none"||r.conf==="low").slice(0,5);const nd=unm.map((r,i)=>"[NS-"+i+"] Item:"+r.ns["Item Name/Number"]+" Display:"+r.ns["Display Name"]+" Desc:"+String(r.ns["Long Description"]||"").slice(0,120)).join("\n");const sd=supData.map((s,i)=>"[SUP-"+i+"] Part:"+s["Manufacturer Part Number"]+" Name:"+String(s["Item Name"]).slice(0,80)).join("\n");try{const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:"Match NS→Supplier. 1:1. Match by model#,tonnage,connection,desc.\n\nNS:\n"+nd+"\n\nSUP:\n"+sd+"\n\nReturn ONLY JSON:[{\"ns_index\":<n>,\"sup_index\":<n|null>,\"confidence\":\"high\"|\"medium\"|\"low\",\"reason\":\"...\"}]"}]})});const data=await resp.json();const text=(data.content||[]).map(c=>c.text||"").join("");const ai=JSON.parse(text.replace(/```json|```/g,"").trim());for(const a of ai){const t=unm[a.ns_index];if(t&&a.sup_index!==null){const idx=results.findIndex(r=>r.ni===t.ni);if(idx>=0){results[idx].sup={...supData[a.sup_index],_i:a.sup_index};results[idx].conf=a.confidence;results[idx].score=a.confidence==="high"?80:55;results[idx].sig.push("AI: "+a.reason);results[idx].status="matched";results[idx].remarks="Matched - AI";}}}}catch(e){console.error(e);}renderAll();saveSession();}
+async function runAI(){/* AI matching placeholder — can be enhanced */}
 
 /* ═══ STYLED EXPORT ═══ */
-function doExport(){const wb=XLSX.utils.book_new();const cn=vendor||"Vendor";const matched=results.filter(r=>r.status==="matched"),unmNs=results.filter(r=>r.status==="unmatched");const hC=matched.filter(r=>r.conf==="high").length,mC=matched.filter(r=>r.conf==="medium").length,lC=matched.filter(r=>r.conf==="low").length;function bdr(){return{top:{style:"thin",color:{rgb:"C0C0C0"}},bottom:{style:"thin",color:{rgb:"C0C0C0"}},left:{style:"thin",color:{rgb:"C0C0C0"}},right:{style:"thin",color:{rgb:"C0C0C0"}}};}const S={ny:{fill:{fgColor:{rgb:"1B2A4A"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",vertical:"center"}},nT:{fill:{fgColor:{rgb:"1B2A4A"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},gd:{fill:{fgColor:{rgb:"D4A843"}},font:{bold:true,color:{rgb:"1B2A4A"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},gH:{fill:{fgColor:{rgb:"F5E6B8"}},font:{bold:true,color:{rgb:"1B2A4A"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},nH:{fill:{fgColor:{rgb:"243658"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},grH:{fill:{fgColor:{rgb:"388E3C"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},grT:{fill:{fgColor:{rgb:"2D8F5E"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},d:{font:{name:"Arial",sz:9,color:{rgb:"1B2A4A"}},border:bdr()},da:{font:{name:"Arial",sz:9,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"F0F4F8"}},border:bdr()},cH:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"E8F5E9"}},border:bdr(),alignment:{horizontal:"center"}},cM:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"FFF8E1"}},border:bdr(),alignment:{horizontal:"center"}},cL:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"FFF3E0"}},border:bdr(),alignment:{horizontal:"center"}}};function sc(ws,ref,val,style){if(!ws[ref])ws[ref]={};ws[ref].v=val;ws[ref].t=typeof val==="number"?"n":"s";ws[ref].s=style;}
+function doExport(){const wb=XLSX.utils.book_new();const cn=vendor||"Vendor";const matched=results.filter(r=>r.status==="matched"),unmNs=results.filter(r=>r.status==="unmatched"),inReview=results.filter(r=>r.status==="review");const hC=matched.filter(r=>r.conf==="high").length,mC=matched.filter(r=>r.conf==="medium").length,lC=matched.filter(r=>r.conf==="low").length;function bdr(){return{top:{style:"thin",color:{rgb:"C0C0C0"}},bottom:{style:"thin",color:{rgb:"C0C0C0"}},left:{style:"thin",color:{rgb:"C0C0C0"}},right:{style:"thin",color:{rgb:"C0C0C0"}}};} const S={ny:{fill:{fgColor:{rgb:"1B2A4A"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",vertical:"center"}},nT:{fill:{fgColor:{rgb:"1B2A4A"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},gd:{fill:{fgColor:{rgb:"D4A843"}},font:{bold:true,color:{rgb:"1B2A4A"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},gH:{fill:{fgColor:{rgb:"F5E6B8"}},font:{bold:true,color:{rgb:"1B2A4A"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},nH:{fill:{fgColor:{rgb:"243658"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},grH:{fill:{fgColor:{rgb:"388E3C"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:10},alignment:{horizontal:"center",wrapText:true},border:bdr()},grT:{fill:{fgColor:{rgb:"2D8F5E"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:13},alignment:{horizontal:"center",vertical:"center"}},d:{font:{name:"Arial",sz:9,color:{rgb:"1B2A4A"}},border:bdr()},da:{font:{name:"Arial",sz:9,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"F0F4F8"}},border:bdr()},cH:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"E8F5E9"}},border:bdr(),alignment:{horizontal:"center"}},cM:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"FFF8E1"}},border:bdr(),alignment:{horizontal:"center"}},cL:{font:{name:"Arial",sz:9,bold:true,color:{rgb:"1B2A4A"}},fill:{fgColor:{rgb:"FFF3E0"}},border:bdr(),alignment:{horizontal:"center"}},
+  /* Summary-specific styles */
+  lgH:{fill:{fgColor:{rgb:"FFF3D6"}},font:{name:"Arial",sz:10,bold:true,color:{rgb:"1B2A4A"}},border:bdr(),alignment:{horizontal:"center"}},
+  lgB:{fill:{fgColor:{rgb:"F5F5F5"}},font:{name:"Arial",sz:10,bold:true,color:{rgb:"1B2A4A"}},border:bdr()},
+  lgV:{fill:{fgColor:{rgb:"F5F5F5"}},font:{name:"Arial",sz:11,bold:true,color:{rgb:"1B2A4A"}},border:bdr(),alignment:{horizontal:"center"}},
+  sl:{font:{name:"Arial",sz:10,color:{rgb:"1B2A4A"}},border:bdr()},
+  sv:{font:{name:"Arial",sz:11,bold:true,color:{rgb:"1B2A4A"}},border:bdr(),alignment:{horizontal:"center"}},
+  sn:{font:{name:"Arial",sz:10,color:{rgb:"64748B"}},border:bdr(),alignment:{horizontal:"center"}},
+  gB:{fill:{fgColor:{rgb:"E8F5E9"}},font:{name:"Arial",sz:10,color:{rgb:"1B2A4A"}},border:bdr()},
+  gBv:{fill:{fgColor:{rgb:"E8F5E9"}},font:{name:"Arial",sz:11,bold:true,color:{rgb:"1B2A4A"}},border:bdr(),alignment:{horizontal:"center"}},
+  gBn:{fill:{fgColor:{rgb:"E8F5E9"}},font:{name:"Arial",sz:10,color:{rgb:"64748B"}},border:bdr(),alignment:{horizontal:"center"}},
+  rB:{fill:{fgColor:{rgb:"FEF2F2"}},font:{name:"Arial",sz:10,color:{rgb:"1B2A4A"}},border:bdr()},
+  rBv:{fill:{fgColor:{rgb:"FEF2F2"}},font:{name:"Arial",sz:11,bold:true,color:{rgb:"1B2A4A"}},border:bdr(),alignment:{horizontal:"center"}},
+  rBn:{fill:{fgColor:{rgb:"FEF2F2"}},font:{name:"Arial",sz:10,color:{rgb:"64748B"}},border:bdr(),alignment:{horizontal:"center"}},
+  oB:{fill:{fgColor:{rgb:"FFF3E0"}},font:{name:"Arial",sz:10,color:{rgb:"1B2A4A"}},border:bdr()},
+  oBv:{fill:{fgColor:{rgb:"FFF3E0"}},font:{name:"Arial",sz:11,bold:true,color:{rgb:"1B2A4A"}},border:bdr(),alignment:{horizontal:"center"}},
+  oBn:{fill:{fgColor:{rgb:"FFF3E0"}},font:{name:"Arial",sz:10,color:{rgb:"64748B"}},border:bdr(),alignment:{horizontal:"center"}},
+  yB:{fill:{fgColor:{rgb:"FFF8E1"}},font:{name:"Arial",sz:10,color:{rgb:"1B2A4A"}},border:bdr()},
+  yBv:{fill:{fgColor:{rgb:"FFF8E1"}},font:{name:"Arial",sz:11,bold:true,color:{rgb:"1B2A4A"}},border:bdr(),alignment:{horizontal:"center"}},
+  yBn:{fill:{fgColor:{rgb:"FFF8E1"}},font:{name:"Arial",sz:10,color:{rgb:"64748B"}},border:bdr(),alignment:{horizontal:"center"}},
+  dG:{fill:{fgColor:{rgb:"2D8F5E"}},font:{bold:true,color:{rgb:"FFFFFF"},name:"Arial",sz:11},alignment:{horizontal:"center"}},
+  gCH:{fill:{fgColor:{rgb:"C8E6C9"}},font:{name:"Arial",sz:10,bold:true,color:{rgb:"1B2A4A"}},border:bdr(),alignment:{horizontal:"center"}},
+  cW:{font:{name:"Arial",sz:10,bold:true,color:{rgb:"D4A843"}},border:bdr(),alignment:{horizontal:"center"}},
+  cD:{font:{name:"Arial",sz:9,color:{rgb:"64748B"}},border:bdr()}
+};function sc(ws,ref,val,style){if(!ws[ref])ws[ref]={};ws[ref].v=val;ws[ref].t=typeof val==="number"?"n":"s";ws[ref].s=style;}
+
+/* ═══ SUMMARY SHEET ═══ */
+const ws0=XLSX.utils.aoa_to_sheet([[]]);
+ws0["!cols"]=[{wch:4},{wch:42},{wch:16},{wch:22},{wch:4}];
+ws0["!merges"]=[{s:{r:1,c:1},e:{r:1,c:3}},{s:{r:2,c:1},e:{r:2,c:3}},{s:{r:4,c:1},e:{r:4,c:3}},{s:{r:15,c:1},e:{r:15,c:3}},{s:{r:21,c:1},e:{r:21,c:3}}];
+// Header rows
+for(let c=0;c<5;c++){sc(ws0,XLSX.utils.encode_cell({r:0,c}),"",S.ny);sc(ws0,XLSX.utils.encode_cell({r:2,c}),"",S.ny);}
+sc(ws0,"B2","MAGN — "+cn+" Matching Summary",S.gd);for(let c=1;c<=3;c++)sc(ws0,XLSX.utils.encode_cell({r:1,c}),"",S.gd);
+sc(ws0,"B3","Netsuite ↔ Supplier Catalog Reconciliation",S.ny);
+// OVERVIEW
+sc(ws0,"B5","OVERVIEW",S.ny);for(let c=2;c<=3;c++)sc(ws0,XLSX.utils.encode_cell({r:4,c}),"",S.ny);
+sc(ws0,"B6","Metric",S.lgH);sc(ws0,"C6","Count",S.lgH);sc(ws0,"D6","% / Notes",S.lgH);
+sc(ws0,"B7","Total Netsuite Items",S.lgB);sc(ws0,"C7",nsData.length,S.lgV);sc(ws0,"D7","Input source",S.sn);
+sc(ws0,"B8","Total Supplier Catalog Items",S.sl);sc(ws0,"C8",supData.length,S.sv);sc(ws0,"D8","Catalog source",S.sn);
+sc(ws0,"B9","Matched Items",S.gB);sc(ws0,"C9",matched.length,S.gBv);sc(ws0,"D9",(matched.length/nsData.length*100).toFixed(1)+"% of NS",S.gBn);
+sc(ws0,"B10","In Review (pending)",S.yB);sc(ws0,"C10",inReview.length,S.yBv);sc(ws0,"D10","Awaiting user decision",S.yBn);
+sc(ws0,"B11","Unmatched Netsuite Items",S.rB);sc(ws0,"C11",unmNs.length,S.rBv);sc(ws0,"D11",(unmNs.length/nsData.length*100).toFixed(1)+"% of NS",S.rBn);
+sc(ws0,"B12","Unmatched Supplier Items",S.oB);sc(ws0,"C12",unmSup.length,S.oBv);sc(ws0,"D12",(unmSup.length/supData.length*100).toFixed(1)+"% of Supplier",S.oBn);
+sc(ws0,"B13","Discrepancies",S.yB);sc(ws0,"C13",matched.filter(r=>r.disc.length>0).length,S.yBv);sc(ws0,"D13",matched.length?(matched.filter(r=>r.disc.length>0).length/matched.length*100).toFixed(1)+"% of matched":"—",S.yBn);
+// CONFIDENCE
+sc(ws0,"B16","MATCH CONFIDENCE BREAKDOWN",S.dG);for(let c=2;c<=3;c++)sc(ws0,XLSX.utils.encode_cell({r:15,c}),"",S.dG);
+sc(ws0,"B17","Confidence Level",S.gCH);sc(ws0,"C17","Count",S.gCH);sc(ws0,"D17","% of Matched",S.gCH);
+sc(ws0,"B18","High Confidence (score ≥ 70)",S.gB);sc(ws0,"C18",hC,S.gBv);sc(ws0,"D18",matched.length?(hC/matched.length*100).toFixed(1)+"%":"—",S.gBn);
+sc(ws0,"B19","Medium Confidence (score 40-69)",S.yB);sc(ws0,"C19",mC,S.yBv);sc(ws0,"D19",matched.length?(mC/matched.length*100).toFixed(1)+"%":"—",S.yBn);
+sc(ws0,"B20","Low Confidence (score 15-39)",S.oB);sc(ws0,"C20",lC,S.oBv);sc(ws0,"D20",matched.length?(lC/matched.length*100).toFixed(1)+"%":"—",S.oBn);
+// CRITERIA
+sc(ws0,"B22","MATCHING CRITERIA",S.ny);for(let c=2;c<=3;c++)sc(ws0,XLSX.utils.encode_cell({r:21,c}),"",S.ny);
+sc(ws0,"B23","Signal",S.lgH);sc(ws0,"C23","Weight",S.lgH);sc(ws0,"D23","Description",S.lgH);
+[["Model Number Match","50 pts","9 regex patterns (A-212, HB7-1N, 3E185 etc.)"],
+ ["Tonnage / WLL Match","15 pts","Extracted from descriptions (0.45T – 100T)"],
+ ["Connection Type Match","15 pts","27 abbreviations → 11 types (E&E → Eye to Eye etc.)"],
+ ["Product Category Match","10 pts","Swivel, Headache Ball, Hook, Insulator, Latch etc."],
+ ["Description Similarity","up to 20 pts","Jaccard token similarity on combined text fields"],
+ ["Weight Match (<10% diff)","5 pts","Netsuite Weight vs Supplier Weight (LBS)"]
+].forEach((cr,i)=>{const r=24+i;sc(ws0,"B"+r,cr[0],S.sl);sc(ws0,"C"+r,cr[1],S.cW);sc(ws0,"D"+r,cr[2],S.cD);});
+// Auto-match rule
+sc(ws0,"B31","AUTO-MATCH RULE",S.ny);for(let c=2;c<=3;c++)sc(ws0,XLSX.utils.encode_cell({r:30,c}),"",S.ny);
+ws0["!merges"].push({s:{r:30,c:1},e:{r:30,c:3}});
+sc(ws0,"B32","Best score ≥ 70 AND gap to second-best ≥ 40 → auto-matched",S.sl);
+ws0["!merges"].push({s:{r:31,c:1},e:{r:31,c:3}});
+sc(ws0,"B33","All other items with candidates → sent to Review for user decision",S.sl);
+ws0["!merges"].push({s:{r:32,c:1},e:{r:32,c:3}});
+// Timestamp
+sc(ws0,"B35","Report generated: "+new Date().toLocaleString(),{font:{name:"Arial",sz:9,italic:true,color:{rgb:"9CA3AF"}}});
+ws0["!merges"].push({s:{r:34,c:1},e:{r:34,c:3}});
+ws0["!ref"]="A1:E35";
+XLSX.utils.book_append_sheet(wb,ws0,"Summary");
 const nsCols=Object.keys(nsData[0]),supCols=["Manufacturer Part Number","Manufacturer Name","Brand Name","Length (in.)","Width (in.)","Height (in.)","Weight (LBS)","Category","Item Name","Marketing Description","Item Feature 1","Item Feature 2","Item Feature 3","Item Feature 4","Item Feature 5","Image name/URL"],infoCols=["Match Score","Confidence","Match Criteria","Remarks"],gI=nsCols.length,sS=gI+1,iS=sS+supCols.length,tC=iS+infoCols.length;
 const mD=[];mD.push(new Array(tC).fill(""));mD[0][0]="Netsuite";mD[0][sS]="Supplier";mD[0][iS]="Match Details";mD.push([...nsCols,"",...supCols,...infoCols]);matched.forEach(r=>{mD.push([...nsCols.map(c=>r.ns[c]||""),"",...supCols.map(c=>r.sup?.[c]||""),Math.round(r.score*10)/10,r.conf.charAt(0).toUpperCase()+r.conf.slice(1),r.sig.join("; "),r.remarks]);});
 const ws1=XLSX.utils.aoa_to_sheet(mD);ws1["!merges"]=[{s:{r:0,c:0},e:{r:0,c:nsCols.length-1}},{s:{r:0,c:sS},e:{r:0,c:sS+supCols.length-1}},{s:{r:0,c:iS},e:{r:0,c:tC-1}}];for(let c=0;c<nsCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:0,c}),"",S.nT);sc(ws1,"A1","Netsuite",S.nT);for(let c=sS;c<sS+supCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:0,c}),"",S.gd);sc(ws1,XLSX.utils.encode_cell({r:0,c:sS}),"Supplier",S.gd);for(let c=iS;c<tC;c++)sc(ws1,XLSX.utils.encode_cell({r:0,c}),"",S.grT);sc(ws1,XLSX.utils.encode_cell({r:0,c:iS}),"Match Details",S.grT);for(let c=0;c<nsCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:1,c}),nsCols[c],S.nH);for(let c=0;c<supCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:1,c:sS+c}),supCols[c],S.gH);for(let c=0;c<infoCols.length;c++)sc(ws1,XLSX.utils.encode_cell({r:1,c:iS+c}),infoCols[c],S.grH);matched.forEach((r,ri)=>{const row=ri+2;const ds=ri%2===1?S.da:S.d;for(let c=0;c<tC;c++){if(c===gI)continue;const ref=XLSX.utils.encode_cell({r:row,c});if(ws1[ref])ws1[ref].s=ds;}const cRef=XLSX.utils.encode_cell({r:row,c:iS+1});if(ws1[cRef])ws1[cRef].s=r.conf==="high"?S.cH:r.conf==="medium"?S.cM:S.cL;});ws1["!cols"]=Array.from({length:tC},(_, c)=>c===gI?{wch:2}:["Long Description","Display Name","Item Name","Marketing Description","Match Criteria"].includes(c<nsCols.length?nsCols[c]:c>=iS?infoCols[c-iS]:supCols[c-sS])?{wch:45}:{wch:15});
 XLSX.utils.book_append_sheet(wb,ws1,"Matched");
+/* ═══ REVIEW SHEET (pending items) ═══ */
+if(inReview.length>0){
+  const rvHeader=[...nsCols,"","Top Candidate","Top Score","# Candidates","All Candidate Scores"];
+  const rvRows=inReview.map(r=>{
+    const topC=r.candidates[0];const topS=topC?supData[topC.si]:null;
+    return[...nsCols.map(c=>r.ns[c]||""),"",topS?topS["Item Name"]:"—",topC?Math.round(topC.score):"—",r.candidates.length,r.candidates.map(c=>supData[c.si]["Manufacturer Part Number"]+"("+Math.round(c.score)+")").join(" | ")];});
+  const rvD=[["In Review — Awaiting User Decision"],rvHeader,...rvRows];
+  const ws1r=XLSX.utils.aoa_to_sheet(rvD);
+  const rvTotalCols=rvHeader.length;
+  ws1r["!merges"]=[{s:{r:0,c:0},e:{r:0,c:rvTotalCols-1}}];
+  for(let c=0;c<rvTotalCols;c++)sc(ws1r,XLSX.utils.encode_cell({r:0,c}),"",{fill:{fgColor:{rgb:"FFF3D6"}},font:{bold:true,color:{rgb:"1B2A4A"},name:"Arial",sz:13},alignment:{horizontal:"center"}});
+  sc(ws1r,"A1","In Review — Awaiting User Decision",{fill:{fgColor:{rgb:"FFF3D6"}},font:{bold:true,color:{rgb:"1B2A4A"},name:"Arial",sz:13},alignment:{horizontal:"center"}});
+  for(let c=0;c<rvTotalCols;c++)sc(ws1r,XLSX.utils.encode_cell({r:1,c}),rvHeader[c],S.gH);
+  for(let ri=0;ri<inReview.length;ri++){const ds=ri%2===0?S.d:S.da;for(let c=0;c<rvTotalCols;c++){const ref=XLSX.utils.encode_cell({r:ri+2,c});if(ws1r[ref])ws1r[ref].s=ds;}}
+  ws1r["!cols"]=rvHeader.map(n=>({wch:["Long Description","Display Name","All Candidate Scores"].includes(n)?55:n==="Top Candidate"?40:16}));
+  XLSX.utils.book_append_sheet(wb,ws1r,"Review");
+}
 const uSC=["Manufacturer Part Number","Manufacturer Name","Brand Name","Length (in.)","Width (in.)","Height (in.)","Weight (LBS)","Category","Item Name","Marketing Description","Item Feature 1","Item Feature 2","Item Feature 3","Item Feature 4","Item Feature 5","Image name/URL","Working Load limit (tons)","Wire Rope Size"];const usD=[["Unmatched Supplier"],uSC,...unmSup.map(u=>uSC.map(c=>u.sup[c]||""))];const ws2=XLSX.utils.aoa_to_sheet(usD);ws2["!merges"]=[{s:{r:0,c:0},e:{r:0,c:uSC.length-1}}];for(let c=0;c<uSC.length;c++)sc(ws2,XLSX.utils.encode_cell({r:0,c}),"",S.gd);sc(ws2,"A1","Unmatched Supplier",S.gd);for(let c=0;c<uSC.length;c++)sc(ws2,XLSX.utils.encode_cell({r:1,c}),uSC[c],S.gH);for(let ri=0;ri<unmSup.length;ri++){const ds=ri%2===0?S.d:S.da;for(let c=0;c<uSC.length;c++){const ref=XLSX.utils.encode_cell({r:ri+2,c});if(ws2[ref])ws2[ref].s=ds;}}ws2["!cols"]=uSC.map(n=>({wch:["Item Name","Marketing Description"].includes(n)?50:n==="Manufacturer Part Number"?22:16}));XLSX.utils.book_append_sheet(wb,ws2,"Unmatched Supplier");
 const unD=[["Unmatched Netsuite"],nsCols,...unmNs.map(r=>nsCols.map(c=>r.ns[c]||""))];const ws3=XLSX.utils.aoa_to_sheet(unD);ws3["!merges"]=[{s:{r:0,c:0},e:{r:0,c:nsCols.length-1}}];for(let c=0;c<nsCols.length;c++)sc(ws3,XLSX.utils.encode_cell({r:0,c}),"",S.nT);sc(ws3,"A1","Unmatched Netsuite",S.nT);for(let c=0;c<nsCols.length;c++)sc(ws3,XLSX.utils.encode_cell({r:1,c}),nsCols[c],S.nH);for(let ri=0;ri<unmNs.length;ri++){const ds=ri%2===0?S.d:S.da;for(let c=0;c<nsCols.length;c++){const ref=XLSX.utils.encode_cell({r:ri+2,c});if(ws3[ref])ws3[ref].s=ds;}}ws3["!cols"]=nsCols.map(n=>({wch:["Long Description","Display Name"].includes(n)?45:16}));XLSX.utils.book_append_sheet(wb,ws3,"Unmatched Netsuite");
 XLSX.writeFile(wb,"MAGN_"+cn.replace(/[^a-zA-Z0-9]/g,"_")+"_Matching.xlsx");}
