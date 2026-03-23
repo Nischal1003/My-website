@@ -27,7 +27,7 @@
 .choice-heading-fb{display:none;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;}
 .choice-heading h1{font-size:24px;font-weight:700;color:#fff;margin-bottom:6px;}
 .choice-heading p{font-size:13px;color:rgba(255,255,255,0.35);}
-.choice-cards{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;max-width:700px;padding:0 20px;}
+.choice-cards{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;max-width:1020px;padding:0 20px;}
 .choice-card{
   background:#111827;border:1px solid rgba(255,255,255,0.08);
   border-radius:18px;padding:36px 32px;width:300px;max-width:90vw;
@@ -40,6 +40,10 @@
 .choice-card:hover::before{opacity:1;}
 .choice-card.ops::before{background:#2563EB;}
 .choice-card.matcher::before{background:#D4A843;}
+.choice-card.frid::before{background:#C8F04D;}
+.choice-card:hover.frid{border-color:rgba(200,240,77,0.3);}
+.choice-card.frid .choice-icon{background:rgba(200,240,77,0.15);}
+.choice-card.frid .choice-arrow{color:#C8F04D;}
 .choice-card:hover.ops{border-color:rgba(37,99,235,0.3);}
 .choice-card:hover.matcher{border-color:rgba(212,168,67,0.3);}
 .choice-icon{width:60px;height:60px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 18px;}
@@ -521,6 +525,14 @@ button,input,textarea,select{font-family:'Inter',sans-serif;}
       <div class="choice-name">Product Matcher</div>
       <div class="choice-desc">MAGN — Netsuite ↔ Supplier intelligent product matching engine</div>
       <div class="choice-arrow">Sign In →</div>
+    </div>
+    <div class="choice-card frid" onclick="goToFRID()">
+      <div class="choice-icon">
+        <svg width="28" height="28" fill="none" stroke="#C8F04D" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
+      </div>
+      <div class="choice-name">FRID Inventory Reconciliation</div>
+      <div class="choice-desc">fresh id Products Berlin — Monthly inventory reconciliation across Candis, DATEV, CDH & closing inventory</div>
+      <div class="choice-arrow">Launch →</div>
     </div>
   </div>
   <div class="choice-footer">XInfin Consultants · Pahelo Pul, Kathmandu, Nepal</div>
@@ -1064,6 +1076,11 @@ function goToMatcherLogin(){
   document.getElementById('choice-screen').classList.add('hidden');
   document.getElementById('matcher-login').classList.add('show');
   document.getElementById('ml-user').focus();
+}
+
+function goToFRID(){
+  // Navigate to the FRID Inventory Reconciliation dashboard
+  window.location.href = './recon.html';
 }
 
 function backToChoice(){
