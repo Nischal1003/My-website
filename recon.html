@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FRID Inventory Reconciliation — fresh id Products Berlin</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23C8F04D'/><text x='16' y='22' text-anchor='middle' font-size='16' font-weight='700' fill='%23111'>fi</text></svg>"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Inter',-apple-system,sans-serif;background:#f7f6f0;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+</style>
+<!-- CDN Dependencies -->
+<script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.0/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+// React globals from CDN
+const { useState, useRef, useCallback, useMemo, useEffect } = React;
+
+// Supabase setup
+const supabase = window.supabase.createClient(
+  'https://xrepjbqwstkqfztjxqsq.supabase.co',
+  'sb_publishable_3HSsDekMnLLNSeFyKyINxQ_-omWhguz'
+);
+
+async function loadAllMonths() {
+  const { data, error } = await supabase.from('recon_months').select('*').order('year', { ascending: false }).order('month', { ascending: false });
+  if (error) { console.error('Load error:', error); return {}; }
+  const result = {};
+  for (const row of (data || [])) {
+    result[row.id] = { period: row.period, month: row.month, year: row.year, approvedAt: row.approved_at, closingData: row.closing_data, decisions: row.decisions, invDec: row.inv_dec };
+  }
+  return result;
+}
+
+async function saveMonth(key, payload) {
+  const { error } = await supabase.from('recon_months').upsert({ id: key, period: payload.period, month: payload.month, year: payload.year, approved_at: payload.approvedAt, closing_data: payload.closingData, decisions: payload.decisions, inv_dec: payload.invDec, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  if (error) throw new Error(error.message);
+}
+
+async function deleteMonth(key) {
+  const { error } = await supabase.from('recon_months').delete().eq('id', key);
+  if (error) throw new Error(error.message);
+}
+
+// xlsx-js-style is loaded as window.XLSX
+function loadXlsxStyle() { return Promise.resolve(window.XLSX); }
+
+const PAL=["#2d6a4f","#1a5fa8","#b45309","#7c3aed","#c0392b","#0e7490","#9d174d","#065f46","#92400e","#1e40af"];
+const ccColor=i=>PAL[i%PAL.length];
+const MONTHS=['','January','February','March','April','May','June','July','August','September','October','November','December'];
+
+const DEFAULT_MAPPING=[
+  {accCode:2110,category:'EXPENSES [OTHER]',descDe:'Zinsaufwendungen f.kfr.Verbindlichkeit.',descEn:'Interest on short-term liabilities'},{accCode:2120,category:'EXPENSES [OTHER]',descDe:'Zinsaufwendungen f.lfr.Verbindlichkeit.',descEn:'Interest on long-term liabilities'},{accCode:2150,category:'EXPENSES [OTHER]',descDe:'Aufwendungen aus Währungsumrechnungen',descEn:'Expenses from currency translation'},{accCode:2200,category:'EXPENSES [OTHER]',descDe:'Körperschaftsteuer',descEn:'Corporate income tax'},{accCode:2208,category:'EXPENSES [OTHER]',descDe:'Solidaritätszuschlag',descEn:'Solidarity surcharge'},{accCode:2381,category:'EXPENSES [OTHER]',descDe:'Zuwendg.Spenden wissensch./kult. Zweck',descEn:'Donations for scientific/cultural purposes'},{accCode:2660,category:'EXPENSES [OTHER]',descDe:'Erträge aus der Währungsumrechnung',descEn:'Foreign currency gains'},{accCode:4120,category:'EXPENSES [OTHER]',descDe:'Gehälter',descEn:'Salaries'},{accCode:4124,category:'EXPENSES [OTHER]',descDe:'Geschäftsführergehälter GmbH-Gesells.',descEn:'Managing director salaries'},{accCode:4130,category:'EXPENSES [OTHER]',descDe:'Gesetzliche Sozialaufwendungen',descEn:'Statutory social security contributions'},{accCode:4138,category:'EXPENSES [OTHER]',descDe:'Beiträge zur Berufsgenossenschaft',descEn:'Contributions to trade association'},{accCode:4140,category:'EXPENSES [OTHER]',descDe:'Freiwillige soziale Aufwendung. LSt-frei',descEn:'Voluntary social benefits – tax free'},{accCode:4152,category:'EXPENSES [OTHER]',descDe:'Sachzuwendungen und Dienstleistg. an AN',descEn:'Benefits and services to employees'},{accCode:4165,category:'EXPENSES [OTHER]',descDe:'Aufwendungen für Altersversorgung',descEn:'Pension expenses'},{accCode:4175,category:'EXPENSES [OTHER]',descDe:'Fahrtkostenerstatt. Whg./Arbeitsstätte',descEn:'Travel cost reimbursements'},{accCode:4198,category:'EXPENSES [OTHER]',descDe:'Pauschale Steuer für Arbeitnehmer',descEn:'Flat tax on employee remuneration'},{accCode:4210,category:'EXPENSES [OTHER]',descDe:'Miete, unbewegliche Wirtschaftsgüter',descEn:'Rent – immovable assets'},{accCode:4240,category:'EXPENSES [OTHER]',descDe:'Gas, Strom, Wasser',descEn:'Gas, electricity, water'},{accCode:4250,category:'EXPENSES [OTHER]',descDe:'Reinigung',descEn:'Cleaning'},{accCode:4280,category:'EXPENSES [OTHER]',descDe:'Sonstige Raumkosten',descEn:'Other premises costs'},{accCode:4320,category:'EXPENSES [OTHER]',descDe:'Gewerbesteuer',descEn:'Trade tax'},{accCode:4360,category:'EXPENSES [OTHER]',descDe:'Versicherungen',descEn:'Insurance'},{accCode:4380,category:'EXPENSES [OTHER]',descDe:'Beiträge',descEn:'Contributions'},{accCode:4390,category:'EXPENSES [OTHER]',descDe:'Sonstige Abgaben',descEn:'Other levies'},{accCode:4510,category:'EXPENSES [OTHER]',descDe:'Kfz-Steuern',descEn:'Vehicle taxes'},{accCode:4530,category:'EXPENSES [OTHER]',descDe:'Laufende Fahrzeug-Betriebskosten',descEn:'Ongoing vehicle operating costs'},{accCode:4570,category:'EXPENSES [OTHER]',descDe:'Mietleasing Kfz',descEn:'Vehicle leasing'},{accCode:4600,category:'EXPENSES [OTHER]',descDe:'Werbekosten',descEn:'Advertising expenses'},{accCode:4630,category:'EXPENSES [OTHER]',descDe:'Geschenke abzugsfähig ohne § 37b EStG',descEn:'Gifts deductible (without §37b)'},{accCode:4636,category:'EXPENSES [OTHER]',descDe:'Geschenke n. abzugsfähig mit § 37b EStG',descEn:'Gifts non-deductible (§37b)'},{accCode:4640,category:'EXPENSES [OTHER]',descDe:'Repräsentationskosten',descEn:'Representation expenses'},{accCode:4650,category:'EXPENSES [OTHER]',descDe:'Bewirtungskosten',descEn:'Hospitality expenses'},{accCode:4663,category:'EXPENSES [OTHER]',descDe:'Reisekosten Arbeitnehmer, Fahrtkosten',descEn:'Employee travel – transport'},{accCode:4666,category:'EXPENSES [OTHER]',descDe:'Reisekosten AN Übernachtungsaufwand',descEn:'Employee travel – accommodation'},{accCode:4710,category:'EXPENSES [OTHER]',descDe:'Verpackungsmaterial',descEn:'Packaging material'},{accCode:4730,category:'EXPENSES [OTHER]',descDe:'Ausgangsfrachten',descEn:'Outbound freight'},{accCode:4806,category:'EXPENSES [OTHER]',descDe:'Wartungskosten für Hard- und Software',descEn:'Maintenance costs for hardware/software'},{accCode:4809,category:'EXPENSES [OTHER]',descDe:'Sonstige Reparaturen u.Instandhaltungen',descEn:'Other repairs and maintenance'},{accCode:4810,category:'EXPENSES [OTHER]',descDe:'Mietleasing bewegl. WG techn. Anlagen',descEn:'Leasing movable technical equipment'},{accCode:4824,category:'EXPENSES [OTHER]',descDe:'Abschr. Geschäfts- oder Firmenwert',descEn:'Depreciation of goodwill'},{accCode:4830,category:'EXPENSES [OTHER]',descDe:'Abschreibungen auf Sachanlagen',descEn:'Depreciation of fixed assets'},{accCode:4855,category:'EXPENSES [OTHER]',descDe:'Sofortabschreibung GWG',descEn:'Immediate depreciation of low-value assets'},{accCode:4900,category:'EXPENSES [OTHER]',descDe:'Sonstige betriebliche Aufwendungen',descEn:'Other operating expenses'},{accCode:4901,category:'EXPENSES [OTHER]',descDe:'GBV fid Holding',descEn:'GBV fid Holding'},{accCode:4909,category:'EXPENSES [OTHER]',descDe:'Fremdleistungen und Fremdarbeiten',descEn:'External services and contract work'},{accCode:4910,category:'EXPENSES [OTHER]',descDe:'Porto',descEn:'Postage'},{accCode:4920,category:'EXPENSES [OTHER]',descDe:'Telefon',descEn:'Telephone'},{accCode:4930,category:'EXPENSES [OTHER]',descDe:'Bürobedarf',descEn:'Office supplies'},{accCode:4940,category:'EXPENSES [OTHER]',descDe:'Zeitschrift./Bücher/dig.Medien',descEn:'Journals / books / digital media'},{accCode:4945,category:'EXPENSES [OTHER]',descDe:'Fortbildungskosten',descEn:'Training and development costs'},{accCode:4950,category:'EXPENSES [OTHER]',descDe:'Rechts- und Beratungskosten',descEn:'Legal and consulting fees'},{accCode:4955,category:'EXPENSES [OTHER]',descDe:'Buchführungskosten',descEn:'Accounting fees'},{accCode:4957,category:'EXPENSES [OTHER]',descDe:'Abschluss- und Prüfungskosten',descEn:'Annual accounts and audit fees'},{accCode:4964,category:'EXPENSES [OTHER]',descDe:'Aufwendungen für Lizenzen, Konzessionen',descEn:'Expenses for licenses, concessions'},{accCode:4969,category:'EXPENSES [OTHER]',descDe:'Aufwand Abraum-/Abfallbeseitigung',descEn:'Overburden / Waste Disposal'},{accCode:4970,category:'EXPENSES [OTHER]',descDe:'Nebenkosten des Geldverkehrs',descEn:'Bank charges / payment transaction fees'},{accCode:4980,category:'EXPENSES [OTHER]',descDe:'Sonstiger Betriebsbedarf',descEn:'Miscellaneous operating materials'},{accCode:4985,category:'EXPENSES [OTHER]',descDe:'Werkzeuge und Kleingeräte',descEn:'Tools and small equipment'},{accCode:8610,category:'EXPENSES [OTHER]',descDe:'Verrechnete sonstige Sachbezüge',descEn:'Charged non-cash employee benefits'},{accCode:8611,category:'EXPENSES [OTHER]',descDe:'Verrech. sonstige Sachbezüge Fzg 19%',descEn:'Charged non-cash benefits – vehicles 19%'},{accCode:3030,category:'EXPENSES [COGS]',descDe:'',descEn:''},{accCode:3100,category:'EXPENSES [COGS]',descDe:'Fremdleistungen',descEn:'External services'},{accCode:3106,category:'EXPENSES [COGS]',descDe:'Fremdleistungen 19% Vorsteuer',descEn:'External services – input tax 19%'},{accCode:3108,category:'EXPENSES [COGS]',descDe:'Fremdleistungen 7% Vorsteuer',descEn:'Subcontracted Services – 7% Input VAT'},{accCode:3123,category:'EXPENSES [COGS]',descDe:'Sonstige Leistungen EU 19% Vorst./USt',descEn:'Other EU services – input tax/VAT 19%'},{accCode:3200,category:'EXPENSES [COGS]',descDe:'Wareneingang',descEn:'Goods received'},{accCode:3300,category:'EXPENSES [COGS]',descDe:'Wareneingang 7% Vorsteuer',descEn:'Goods received – input tax 7%'},{accCode:3400,category:'EXPENSES [COGS]',descDe:'Wareneingang 19% Vorsteuer',descEn:'Goods received – input tax 19%'},{accCode:3401,category:'EXPENSES [COGS]',descDe:'Wareneingang 19% Vorsteuer',descEn:'Goods received – input tax 19%'},{accCode:3425,category:'EXPENSES [COGS]',descDe:'EU-Erwerb 19% Vorst./USt',descEn:'EU acquisition – input tax/VAT 19%'},{accCode:3736,category:'EXPENSES [COGS]',descDe:'Erhaltene Skonti 19% Vorsteuer',descEn:'Cash discounts received – input tax 19%'},{accCode:3800,category:'EXPENSES [COGS]',descDe:'Bezugsnebenkosten',descEn:'Incidental procurement costs'},{accCode:3850,category:'EXPENSES [COGS]',descDe:'Zölle und Einfuhrabgaben',descEn:'Customs duties and import levies'},{accCode:3960,category:'EXPENSES [COGS]',descDe:'Bestandsveränderung RHB-Stoffe / Waren',descEn:'Inventory changes – Raw materials / goods'},
+];
+
+function parseGermanNum(v){if(v===null||v===undefined||v==='')return 0;if(typeof v==='number')return v;let s=String(v).trim().replace(/[€$£\s]/g,'');if(/\d\.\d{3},/.test(s)||/^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(s))s=s.replace(/\./g,'').replace(',','.');else if(s.includes(',')&&!s.includes('.'))s=s.replace(',','.');s=s.replace(/\(([^)]+)\)/,'-$1');return parseFloat(s)||0;}
+function parseKOST1(k){if(!k)return{cc:null,project:''};const s=String(k).trim(),di=s.indexOf('-'),k1=di>=0?s.substring(0,di).trim():s,k2=di>=0?s.substring(di+1).trim():'',si=k1.indexOf(' '),k11=si>=0?k1.substring(0,si):k1,k12=si>=0?k1.substring(si+1).trim():'',ui=k11.indexOf('_'),ccStr=ui>=0?k11.substring(0,ui):k11,k111=ui>=0?k11.substring(ui+1):'',cc=parseInt(ccStr,10);return{cc:isNaN(cc)?null:cc,project:(k111+k12+(k2?'-'+k2:'')).trim()};}
+function extractDate(raw){if(raw==null||raw==='')return null;if(typeof raw==='number'){const d=new Date((raw-25569)*86400*1000);return isNaN(d.getTime())?null:{d:d.getDate(),m:d.getMonth()+1,y:d.getFullYear()};}if(raw instanceof Date||(typeof raw==='object'&&raw&&typeof raw.getMonth==='function'))return{d:raw.getDate(),m:raw.getMonth()+1,y:raw.getFullYear()};const s=String(raw).trim(),dm=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);if(dm)return{d:+dm[1],m:+dm[2],y:+dm[3]};const iso=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(iso)return{d:+iso[3],m:+iso[2],y:+iso[1]};return null;}
+function fmt(v,dp=2){return v.toLocaleString('en-US',{minimumFractionDigits:dp,maximumFractionDigits:dp});}
+
+// ─── ROBUST COLUMN DETECTION ─────────────────────────────────────────────────
+// Strategy: 1) Try header keywords (fast, reliable)  2) Fall back to data-pattern analysis
+
+function findCol(headerRow, keywords) {
+  if (!headerRow) return -1;
+  for (const kw of keywords) {
+    const kwl = kw.toLowerCase();
+    for (let c = 0; c < headerRow.length; c++) {
+      const h = String(headerRow[c] || '').toLowerCase().trim();
+      if (h === kwl || h.includes(kwl)) return c;
+    }
+  }
+  return -1;
+}
+
+function findHeaderRow(rows, expectedKeywords, maxScan = 10) {
+  let bestRow = -1, bestScore = 0;
+  for (let i = 0; i < Math.min(rows.length, maxScan); i++) {
+    const row = rows[i]; if (!row) continue;
+    const rowStr = row.map(v => String(v || '').toLowerCase().trim());
+    let score = 0;
+    for (const kw of expectedKeywords) {
+      if (rowStr.some(s => s.includes(kw.toLowerCase()))) score++;
+    }
+    if (score > bestScore) { bestScore = score; bestRow = i; }
+  }
+  return bestScore >= 2 ? bestRow : -1;
+}
+
+// ─── DATA PATTERN DETECTORS ──────────────────────────────────────────────────
+// Sample up to N data rows from a column and score how well they match a pattern
+
+function sampleCol(rows, col, dataStart, n = 40) {
+  const vals = [];
+  for (let i = dataStart; i < Math.min(rows.length, dataStart + n); i++) {
+    if (rows[i] && rows[i][col] != null && rows[i][col] !== '') vals.push(rows[i][col]);
+  }
+  return vals;
+}
+
+function isDateVal(v) {
+  if (v instanceof Date) return true;
+  if (typeof v === 'number' && v > 40000 && v < 50000) return true; // Excel serial
+  const s = String(v).trim();
+  return /^\d{1,2}\.\d{1,2}\.\d{4}/.test(s) || /^\d{4}-\d{1,2}-\d{1,2}/.test(s);
+}
+
+function isCostCenter(v) {
+  const n = typeof v === 'number' ? v : parseInt(String(v).trim(), 10);
+  return !isNaN(n) && n >= 300000 && n <= 399999;
+}
+
+function isKostLike(v) {
+  // KOST1 can be plain CC number or "375793 - MM - Name" format
+  const s = String(v).trim();
+  const m = s.match(/^(\d+)/);
+  if (!m) return false;
+  const n = parseInt(m[1], 10);
+  return n >= 300000 && n <= 399999;
+}
+
+function isAmountVal(v) {
+  if (typeof v === 'number') return Math.abs(v) > 0.001 && Math.abs(v) < 1e9;
+  const s = String(v).trim().replace(/[€$£\s]/g, '');
+  return /^-?[\d.,]+$/.test(s) && s.length > 1;
+}
+
+function isCurrencyVal(v) {
+  const s = String(v).trim().toUpperCase();
+  return ['EUR', 'USD', 'GBP', 'CHF', 'SEK', 'DKK', 'NOK', 'PLN', 'CZK'].includes(s) || s.length === 3 && /^[A-Z]{3}$/.test(s);
+}
+
+function isTaxRate(v) {
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+  return !isNaN(n) && n >= 0 && n <= 30 && (n === 0 || n === 7 || n === 19 || n === 5 || n === 16 || n === 20 || n === 21 || n === 25);
+}
+
+function isStatusLike(v) {
+  const s = String(v).trim().toLowerCase();
+  return ['exportiert', 'ausstehend', 'exported', 'pending', 'approved', 'paid', 'open', 'closed', 'draft', 'freigegeben', 'gebucht'].some(k => s.includes(k)) || s.length < 20;
+}
+
+function isInvoiceNo(v) {
+  const s = String(v).trim();
+  return s.length >= 2 && s.length <= 30 && /[0-9]/.test(s);
+}
+
+function isTextVal(v) {
+  const s = String(v).trim();
+  return s.length > 3 && /[a-zA-ZäöüÄÖÜß]/.test(s);
+}
+
+// Score a column for a given pattern detector, return 0..1
+function scoreCol(rows, col, dataStart, detector, n = 40) {
+  const vals = sampleCol(rows, col, dataStart, n);
+  if (vals.length === 0) return 0;
+  const matches = vals.filter(detector).length;
+  return matches / vals.length;
+}
+
+// Find best column for a role using: header keywords (priority) + data pattern (fallback)
+// exclude: set of already-assigned column indices to avoid double-assignment
+function detectCol(rows, headerRow, dataStart, keywords, patternFn, exclude = new Set(), minScore = 0.5) {
+  // Try header keywords first
+  const byHeader = findCol(headerRow, keywords);
+  if (byHeader >= 0 && !exclude.has(byHeader)) return byHeader;
+
+  // Fall back to data pattern
+  if (!patternFn) return byHeader >= 0 ? byHeader : -1;
+  let bestCol = -1, bestScore = 0;
+  const numCols = rows[dataStart]?.length || 0;
+  for (let c = 0; c < numCols; c++) {
+    if (exclude.has(c)) continue;
+    const sc = scoreCol(rows, c, dataStart, patternFn);
+    if (sc > bestScore && sc >= minScore) { bestScore = sc; bestCol = c; }
+  }
+  return bestCol;
+}
+
+// ─── PARSERS ─────────────────────────────────────────────────────────────────
+
+function parseCandis(rows, fM, fY) {
+  const map = new Map();
+  if (!rows || rows.length < 2) return map;
+
+  const hdrIdx = findHeaderRow(rows, ['rechnungsnummer', 'betrag', 'kost', 'steuer', 'geschäftspartner', 'invoice', 'amount', 'vendor', 'tax'], 5);
+  const hdr = rows[hdrIdx >= 0 ? hdrIdx : 0];
+  const ds = (hdrIdx >= 0 ? hdrIdx : 0) + 1;
+  const used = new Set();
+
+  // Detect each column: keywords first, pattern fallback
+  const cKost = detectCol(rows, hdr, ds, ['kost1', 'kost', 'kostenstelle', 'cost center', 'cc', 'projekt'], isKostLike, used); if (cKost >= 0) used.add(cKost);
+  const cDate = detectCol(rows, hdr, ds, ['rechnungsdatum', 'invoice date', 'datum', 'date', 'belegdatum', 'invoice_date'], isDateVal, used); if (cDate >= 0) used.add(cDate);
+  const cAmount = detectCol(rows, hdr, ds, ['betrag', 'amount', 'brutto', 'gross', 'rechnungsbetrag', 'total', 'summe', 'invoice amount'], v => isAmountVal(v) && (typeof v === 'number' ? Math.abs(v) > 10 : true), used); if (cAmount >= 0) used.add(cAmount);
+  const cTax = detectCol(rows, hdr, ds, ['steuer', 'steuersatz', 'tax', 'ust', 'mwst', 'vat', 'tax rate', 'tax %', 'steuerschlüssel'], isTaxRate, used, 0.3); if (cTax >= 0) used.add(cTax);
+  const cCurrency = detectCol(rows, hdr, ds, ['währung', 'currency', 'wkz', 'curr', 'devise'], isCurrencyVal, used, 0.4); if (cCurrency >= 0) used.add(cCurrency);
+  const cBillNo = detectCol(rows, hdr, ds, ['rechnungsnummer', 'rechnungs-nr', 'invoice no', 'bill no', 'belegnr', 'beleg-nr', 'invoice number', 'rechnungsnr', 'document no'], isInvoiceNo, used, 0.3); if (cBillNo >= 0) used.add(cBillNo);
+  const cVendor = detectCol(rows, hdr, ds, ['geschäftspartner', 'lieferant', 'vendor', 'supplier', 'partner', 'kreditor', 'company', 'firma', 'name'], isTextVal, used, 0.3); if (cVendor >= 0) used.add(cVendor);
+  const cStatus = detectCol(rows, hdr, ds, ['status', 'zustand', 'state', 'workflow', 'genehmigung'], isStatusLike, used, 0.2);
+
+  if (cKost < 0) return map;
+
+  for (let i = ds; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || (cKost >= 0 && !r[cKost])) continue;
+
+    const raw = cDate >= 0 ? r[cDate] : null;
+    let m = null, y = null, dl = '';
+    if (typeof raw === 'number') {
+      const d = new Date((raw - 25569) * 86400 * 1000);
+      if (!isNaN(d.getTime())) { m = d.getMonth() + 1; y = d.getFullYear(); dl = String(d.getDate()).padStart(2, '0') + '.' + String(m).padStart(2, '0') + '.' + y; }
+    } else if (raw instanceof Date) {
+      m = raw.getMonth() + 1; y = raw.getFullYear(); dl = String(raw.getDate()).padStart(2, '0') + '.' + String(m).padStart(2, '0') + '.' + y;
+    } else if (raw) {
+      const s = String(raw).trim(); dl = s;
+      const dm = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+      if (dm) { m = +dm[2]; y = +dm[3]; }
+      else { const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (iso) { m = +iso[2]; y = +iso[1]; } }
+    }
+    if (m !== fM || y !== fY) continue;
+
+    const { cc, project } = parseKOST1(r[cKost]);
+    if (!cc || cc < 300000 || cc > 399999) continue;
+    const gross = parseGermanNum(cAmount >= 0 ? r[cAmount] : 0);
+    const tax = cTax >= 0 ? (typeof r[cTax] === 'number' ? r[cTax] : parseFloat(String(r[cTax]).replace(',', '.')) || 0) : 0;
+    const net = tax > 0 ? gross / (1 + tax / 100) : gross;
+    if (!map.has(cc)) map.set(cc, { net: 0, gross: 0, count: 0, bills: [], project });
+    const d = map.get(cc);
+    d.net += net; d.gross += gross; d.count++;
+    d.bills.push({
+      billNo: String(cBillNo >= 0 ? r[cBillNo] || '—' : '—'),
+      vendor: String(cVendor >= 0 ? r[cVendor] || '—' : '—'),
+      date: dl, gross, tax, net,
+      currency: String(cCurrency >= 0 ? r[cCurrency] || 'EUR' : 'EUR'),
+      status: String(cStatus >= 0 ? r[cStatus] || '—' : '—')
+    });
+  }
+  return map;
+}
+
+function parseDATEV(rows, accMap, fM, fY) {
+  const map = new Map();
+  if (!rows || !rows.length) return map;
+  const expC = new Set(['EXPENSES [COGS]', 'EXPENSES [OTHER]']);
+
+  // Find first column-header row (contains "Datum")
+  let colMap = null;
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    const row = rows[i]; if (!row) continue;
+    const r0 = String(row[0] || '').trim();
+    // Check if this row looks like a header row
+    const rowStrs = row.map(v => String(v || '').toLowerCase().trim());
+    if (r0 === 'Datum' || rowStrs.includes('datum')) {
+      const h = row;
+      const used = new Set();
+      const cDatum = findCol(h, ['datum', 'date']); if (cDatum >= 0) used.add(cDatum);
+      const cText = detectCol(rows, h, i + 1, ['buchungstext', 'text', 'description', 'bezeichnung', 'beschreibung'], null, used); if (cText >= 0) used.add(cText);
+      const cBeleg = detectCol(rows, h, i + 1, ['belegfeld1', 'belegfeld', 'beleg', 'doc ref', 'belegnr', 'beleg-nr', 'document'], null, used); if (cBeleg >= 0) used.add(cBeleg);
+      const cSoll = detectCol(rows, h, i + 1, ['umsatz soll', 'soll', 'debit', 'soll-betrag'], null, used); if (cSoll >= 0) used.add(cSoll);
+      const cHaben = detectCol(rows, h, i + 1, ['umsatz haben', 'haben', 'credit', 'haben-betrag'], null, used); if (cHaben >= 0) used.add(cHaben);
+      const cWkz = detectCol(rows, h, i + 1, ['wkz', 'währung', 'currency', 'devise'], null, used); if (cWkz >= 0) used.add(cWkz);
+      const cKost = detectCol(rows, h, i + 1, ['kost1', 'kost', 'kostenstelle', 'cost center'], null, used);
+      colMap = { datum: cDatum >= 0 ? cDatum : 0, buchungstext: cText, belegfeld: cBeleg, soll: cSoll >= 0 ? cSoll : 8, haben: cHaben >= 0 ? cHaben : 9, wkz: cWkz, kost1: cKost >= 0 ? cKost : 11 };
+      break;
+    }
+  }
+  if (!colMap) colMap = { datum: 0, buchungstext: 5, belegfeld: 7, soll: 8, haben: 9, wkz: 10, kost1: 11 };
+
+  let cur = null;
+  for (const row of rows) {
+    const c0 = row[colMap.datum] ? String(row[colMap.datum]) : (row[0] ? String(row[0]) : '');
+    if (!c0) continue;
+    if (c0.includes('Kanzlei') || c0.includes('Jahreskonto')) { const m2 = c0.match(/Jahreskonto\s+(\d+)/); if (m2) cur = +m2[1]; continue; }
+    if (c0 === 'Datum' || c0 === 'Column1') continue;
+    if (cur === null) continue;
+    const cat = accMap.get(cur);
+    if (!cat || !expC.has(cat)) continue;
+    const dt = extractDate(row[colMap.datum]);
+    if (!dt || dt.m !== fM || dt.y !== fY) continue;
+    const k1 = colMap.kost1 >= 0 && row[colMap.kost1] ? String(row[colMap.kost1]).trim() : '';
+    if (!k1) continue;
+    const m3 = k1.match(/^(\d+)/);
+    if (!m3) continue;
+    const cc = +m3[1];
+    if (cc < 300000 || cc > 399999) continue;
+    const soll = typeof row[colMap.soll] === 'number' ? row[colMap.soll] : parseGermanNum(row[colMap.soll]);
+    const haben = typeof row[colMap.haben] === 'number' ? row[colMap.haben] : parseGermanNum(row[colMap.haben]);
+    const net = soll - haben;
+    if (!map.has(cc)) map.set(cc, { total: 0, entries: [] });
+    const d = map.get(cc);
+    d.total += net;
+    d.entries.push({
+      date: String(row[colMap.datum] || c0), accCode: cur, accCat: cat,
+      belegfeld: String(colMap.belegfeld >= 0 ? row[colMap.belegfeld] || '—' : '—'),
+      text: String(colMap.buchungstext >= 0 ? row[colMap.buchungstext] || '—' : '—'),
+      net, currency: String(colMap.wkz >= 0 ? row[colMap.wkz] || 'EUR' : 'EUR')
+    });
+  }
+  return map;
+}
+
+function parseCDH(rows, fM, fY) {
+  const map = new Map();
+  if (!rows || rows.length < 3) return map;
+
+  const hdrIdx = findHeaderRow(rows, ['rg-datum', 'komm-nr', 'nettobetrag', 'deck', 'datum', 'invoice', 'net', 'cc', 'customer', 'kunde'], 8);
+  const hdr = rows[hdrIdx >= 0 ? hdrIdx : 2];
+  const ds = (hdrIdx >= 0 ? hdrIdx : 2) + 1;
+  const used = new Set();
+
+  // Detect columns
+  const cDate = detectCol(rows, hdr, ds, ['rg-datum', 'datum', 'invoice date', 'date', 'rechnungsdatum'], isDateVal, used); if (cDate >= 0) used.add(cDate);
+  const cInvNo = detectCol(rows, hdr, ds, ['rg-nr', 'rg-nr.', 'rechnungsnr', 'invoice no', 'invoice', 'beleg', 'belegnr'], isInvoiceNo, used, 0.3); if (cInvNo >= 0) used.add(cInvNo);
+  const cCC = detectCol(rows, hdr, ds, ['komm-nr', 'komm-nr.', 'kommissionsnr', 'kostenstelle', 'cost center', 'cc', 'kost'], v => { const n = typeof v === 'number' ? v : parseInt(String(v), 10); return !isNaN(n) && n >= 100000 && n <= 999999; }, used); if (cCC >= 0) used.add(cCC);
+  const cCustomer = detectCol(rows, hdr, ds, ['kunde', 'customer', 'kundenname', 'client', 'name', 'käufer'], isTextVal, used, 0.3); if (cCustomer >= 0) used.add(cCustomer);
+  const cArtikel = detectCol(rows, hdr, ds, ['artikelbezeichnung', 'artikel', 'article', 'product', 'beschreibung', 'item', 'ware', 'produkt'], isTextVal, used, 0.2); if (cArtikel >= 0) used.add(cArtikel);
+
+  // For Netto and DB: we need two amount columns. Detect all amount-like columns, then pick the best two.
+  const cNetto = detectCol(rows, hdr, ds, ['nettobetrag', 'netto', 'net amount', 'net', 'umsatz', 'revenue', 'sales'], v => isAmountVal(v) && (typeof v === 'number' ? Math.abs(v) > 1 : true), used, 0.3); if (cNetto >= 0) used.add(cNetto);
+  const cDB = detectCol(rows, hdr, ds, ['deck.-beitrag', 'deckungsbeitrag', 'deck', 'db', 'contribution', 'margin', 'profit', 'beitrag', 'ertrag'], v => isAmountVal(v), used, 0.3);
+
+  if (cCC < 0 || cNetto < 0) return map;
+
+  // Determine fill-down columns
+  const fillCols = [cDate, cInvNo, cCC, cCustomer].filter(c => c >= 0);
+  const maxFill = fillCols.length ? Math.max(...fillCols) + 1 : 5;
+  let fd = new Array(Math.max(maxFill, (rows[ds]?.length || 0))).fill(null);
+
+  for (let i = ds; i < rows.length; i++) {
+    const r = [...(rows[i] || [])];
+    if (!r.length || r.every(v => v == null)) continue;
+    for (let c = 0; c < maxFill && c < r.length; c++) {
+      if (r[c] != null) fd[c] = r[c]; else r[c] = fd[c];
+    }
+    const rg = cDate >= 0 && r[cDate] ? String(r[cDate]).trim() : '';
+    const rn = cInvNo >= 0 && r[cInvNo] ? String(r[cInvNo]).trim() : '';
+    if (rg === 'Summe' || rn === 'Summe') continue;
+    const dt = extractDate(cDate >= 0 ? r[cDate] : null);
+    if (!dt || dt.m !== fM || dt.y !== fY) continue;
+    const cc = cCC >= 0 && r[cCC] ? parseInt(String(r[cCC]), 10) : null;
+    if (!cc || isNaN(cc)) continue;
+    const netto = typeof r[cNetto] === 'number' ? r[cNetto] : parseGermanNum(r[cNetto]);
+    const db = cDB >= 0 ? (typeof r[cDB] === 'number' ? r[cDB] : parseGermanNum(r[cDB])) : 0;
+    if (!map.has(cc)) map.set(cc, { cogs: 0, netto: 0, db: 0, lines: [] });
+    const d = map.get(cc);
+    d.cogs += netto - db; d.netto += netto; d.db += db;
+    d.lines.push({
+      invoiceNo: String(cInvNo >= 0 ? r[cInvNo] || '—' : '—'),
+      customer: String(cCustomer >= 0 ? r[cCustomer] || '—' : '—'),
+      date: rg,
+      artikel: String(cArtikel >= 0 ? r[cArtikel] || '—' : '—'),
+      netto, db, cogs: netto - db
+    });
+  }
+  return map;
+}
+
+function parseOpening(rows) {
+  const map = new Map();
+  if (!rows || rows.length < 2) return map;
+
+  const hdrIdx = findHeaderRow(rows, ['cost centre', 'kostenstelle', 'closing', 'inventory', 'cc', 'bestand', 'value', 'cost center'], 10);
+  const hdr = hdrIdx >= 0 ? rows[hdrIdx] : null;
+  const ds = hdrIdx >= 0 ? hdrIdx + 1 : 3;
+  const used = new Set();
+
+  const cCC = hdr ? detectCol(rows, hdr, ds, ['cost centre', 'cost center', 'kostenstelle', 'cc', 'komm-nr', 'komm', 'projekt-nr', 'center'], isCostCenter, used) : -1; if (cCC >= 0) used.add(cCC);
+  const cVal = hdr ? detectCol(rows, hdr, ds, ['final_closing', 'closing inventory', 'closing', 'inventory', 'bestand', 'endbestand', 'value', 'amount', 'saldo', 'balance', 'wert'], v => typeof v === 'number' && Math.abs(v) > 0, used, 0.3) : -1;
+
+  // Fallbacks
+  const fCC = cCC >= 0 ? cCC : 1;
+  const fVal = cVal >= 0 ? cVal : 7;
+
+  for (let i = ds; i < rows.length; i++) {
+    const r = rows[i]; if (!r) continue;
+    const cc = r[fCC], val = r[fVal];
+    if (cc == null) continue;
+    const ccN = Math.round(typeof cc === 'number' ? cc : parseFloat(String(cc)));
+    if (isNaN(ccN) || ccN <= 0) continue;
+    // Skip if it's clearly a header/text row
+    if (typeof cc === 'string' && !/^\d+$/.test(cc.trim())) continue;
+    map.set(ccN, typeof val === 'number' ? val : parseGermanNum(val));
+  }
+  return map;
+}
+
+// ─── STYLED EXCEL EXPORT (fresh id branding) ────────────────────────────────
+function sc(ws, ref, val, style) {
+  if (!ws[ref]) ws[ref] = {};
+  ws[ref].v = val;
+  ws[ref].t = typeof val === 'number' ? 'n' : 's';
+  ws[ref].s = style;
+}
+
+function bdr() {
+  return { top: { style: 'thin', color: { rgb: 'D5D4CD' } }, bottom: { style: 'thin', color: { rgb: 'D5D4CD' } }, left: { style: 'thin', color: { rgb: 'D5D4CD' } }, right: { style: 'thin', color: { rgb: 'D5D4CD' } } };
+}
+
+// Style definitions using fresh id color scheme
+const XS = {
+  // Title row: brand lime bg, bold black text
+  title: { fill: { fgColor: { rgb: 'C8F04D' } }, font: { bold: true, color: { rgb: '111110' }, name: 'Calibri', sz: 14 }, alignment: { horizontal: 'left', vertical: 'center' } },
+  // Subtitle: dark bg
+  subtitle: { fill: { fgColor: { rgb: '1C1C1A' } }, font: { bold: true, color: { rgb: 'FFFFFF' }, name: 'Calibri', sz: 11 }, alignment: { horizontal: 'left', vertical: 'center' } },
+  // Date row: light bg
+  date: { fill: { fgColor: { rgb: 'F0EFE8' } }, font: { color: { rgb: '6B6A65' }, name: 'Calibri', sz: 9 }, alignment: { horizontal: 'left', vertical: 'center' } },
+  // Header: brand dark green bg, white bold text
+  hdr: { fill: { fgColor: { rgb: '9BB827' } }, font: { bold: true, color: { rgb: 'FFFFFF' }, name: 'Calibri', sz: 10 }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: bdr() },
+  // Data row (white)
+  d: { font: { name: 'Calibri', sz: 10, color: { rgb: '1C1C1A' } }, border: bdr(), alignment: { vertical: 'center' } },
+  // Data row (alternating)
+  da: { font: { name: 'Calibri', sz: 10, color: { rgb: '1C1C1A' } }, fill: { fgColor: { rgb: 'F7F6F0' } }, border: bdr(), alignment: { vertical: 'center' } },
+  // Data number (white)
+  dn: { font: { name: 'Calibri', sz: 10, color: { rgb: '1C1C1A' } }, border: bdr(), alignment: { vertical: 'center', horizontal: 'right' }, numFmt: '#,##0.00' },
+  // Data number (alternating)
+  dna: { font: { name: 'Calibri', sz: 10, color: { rgb: '1C1C1A' } }, fill: { fgColor: { rgb: 'F7F6F0' } }, border: bdr(), alignment: { vertical: 'center', horizontal: 'right' }, numFmt: '#,##0.00' },
+  // Total row text
+  tot: { fill: { fgColor: { rgb: 'E2E1DA' } }, font: { bold: true, name: 'Calibri', sz: 10, color: { rgb: '111110' } }, border: { top: { style: 'medium', color: { rgb: '9BB827' } }, bottom: { style: 'medium', color: { rgb: '9BB827' } }, left: { style: 'thin', color: { rgb: 'D5D4CD' } }, right: { style: 'thin', color: { rgb: 'D5D4CD' } } }, alignment: { vertical: 'center' } },
+  // Total row number
+  totn: { fill: { fgColor: { rgb: 'E2E1DA' } }, font: { bold: true, name: 'Calibri', sz: 10, color: { rgb: '111110' } }, border: { top: { style: 'medium', color: { rgb: '9BB827' } }, bottom: { style: 'medium', color: { rgb: '9BB827' } }, left: { style: 'thin', color: { rgb: 'D5D4CD' } }, right: { style: 'thin', color: { rgb: 'D5D4CD' } } }, alignment: { vertical: 'center', horizontal: 'right' }, numFmt: '#,##0.00' },
+  // Status styles
+  match: { font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: '1A7A4A' } }, fill: { fgColor: { rgb: 'E8F7EE' } }, border: bdr(), alignment: { horizontal: 'center', vertical: 'center' } },
+  minor: { font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: '92640A' } }, fill: { fgColor: { rgb: 'FEF5E4' } }, border: bdr(), alignment: { horizontal: 'center', vertical: 'center' } },
+  variance: { font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: 'C0392B' } }, fill: { fgColor: { rgb: 'FDF0EF' } }, border: bdr(), alignment: { horizontal: 'center', vertical: 'center' } },
+  // Empty merged cell filler
+  blank: { fill: { fgColor: { rgb: 'C8F04D' } } },
+  blankSub: { fill: { fgColor: { rgb: '1C1C1A' } } },
+  blankDate: { fill: { fgColor: { rgb: 'F0EFE8' } } },
+};
+
+function buildSheet(LIB, title, period, headers, dataRows, totalRow, colWidths, opts = {}) {
+  const numCols = headers.length;
+  const allData = [
+    ['fresh id Products Berlin'],
+    [title + (period ? ' — ' + period : '')],
+    ['Generated: ' + new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })],
+    [],
+    headers,
+    ...dataRows,
+  ];
+  if (totalRow) allData.push(totalRow);
+  const ws = LIB.utils.aoa_to_sheet(allData);
+  ws['!cols'] = colWidths.map(w => ({ wch: w }));
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: numCols - 1 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: numCols - 1 } },
+  ];
+  ws['!rows'] = [{ hpt: 30 }, { hpt: 24 }, { hpt: 18 }, { hpt: 6 }, { hpt: 26 }];
+  // Apply styles
+  for (let c = 0; c < numCols; c++) {
+    sc(ws, LIB.utils.encode_cell({ r: 0, c }), c === 0 ? allData[0][0] : '', c === 0 ? XS.title : XS.blank);
+    sc(ws, LIB.utils.encode_cell({ r: 1, c }), c === 0 ? allData[1][0] : '', c === 0 ? XS.subtitle : XS.blankSub);
+    sc(ws, LIB.utils.encode_cell({ r: 2, c }), c === 0 ? allData[2][0] : '', c === 0 ? XS.date : XS.blankDate);
+    sc(ws, LIB.utils.encode_cell({ r: 4, c }), headers[c], XS.hdr);
+  }
+  const statusColIdx = opts.statusCol ?? -1;
+  for (let ri = 0; ri < dataRows.length; ri++) {
+    const row = dataRows[ri]; const isAlt = ri % 2 === 1; const rIdx = 5 + ri;
+    for (let c = 0; c < numCols; c++) {
+      const ref = LIB.utils.encode_cell({ r: rIdx, c }); const val = row[c];
+      if (c === statusColIdx && typeof val === 'string') {
+        const sl = val.toLowerCase();
+        sc(ws, ref, val, sl === 'match' ? XS.match : sl === 'minor' ? XS.minor : sl.includes('vari') ? XS.variance : (isAlt ? XS.da : XS.d));
+      } else if (typeof val === 'number') { sc(ws, ref, val, isAlt ? XS.dna : XS.dn);
+      } else { sc(ws, ref, val ?? '', isAlt ? XS.da : XS.d); }
+    }
+  }
+  if (totalRow) {
+    const tIdx = 5 + dataRows.length;
+    for (let c = 0; c < numCols; c++) {
+      const ref = LIB.utils.encode_cell({ r: tIdx, c }); const val = totalRow[c];
+      sc(ws, ref, typeof val === 'number' ? val : val ?? '', typeof val === 'number' ? XS.totn : XS.tot);
+    }
+  }
+  return ws;
+}
+
+async function exportWorkbook(sheets, filename) {
+  const LIB = await loadXlsxStyle();
+  const wb = LIB.utils.book_new();
+  sheets.forEach(s => {
+    const ws = buildSheet(LIB, s.title, s.period, s.headers, s.dataRows, s.totalRow, s.colWidths, s.opts || {});
+    LIB.utils.book_append_sheet(wb, ws, s.name);
+  });
+  LIB.writeFile(wb, filename);
+}
+
+const S={brand:'#C8F04D',brandDark:'#9BB827',black:'#111110',g900:'#1c1c1a',g700:'#3d3d3a',g500:'#6b6a65',g300:'#c4c3bc',g200:'#e2e1da',g100:'#f0efe8',g50:'#f7f6f0',white:'#fff',success:'#1a7a4a',successBg:'#e8f7ee',danger:'#c0392b',dangerBg:'#fdf0ef',warn:'#92640a',warnBg:'#fef5e4',info:'#1a5fa8',infoBg:'#e8f0fc',radius:8,radiusLg:12,font:"'Inter',-apple-system,sans-serif",mono:"'DM Mono',monospace"};
+function Pill({status}){const m={Match:{bg:S.successBg,c:S.success,b:'#b7e0c8'},Minor:{bg:S.warnBg,c:S.warn,b:'#f0d8a0'},Variance:{bg:S.dangerBg,c:S.danger,b:'#f5c0bb'}};const s=m[status]||m.Variance;return <span style={{display:'inline-block',padding:'2px 9px',borderRadius:20,fontSize:11,fontWeight:600,background:s.bg,color:s.c,border:`1px solid ${s.b}`,textTransform:'uppercase'}}>{status}</span>;}
+function CatBadge({cat}){const m={'EXPENSES [COGS]':{bg:S.dangerBg,c:S.danger,l:'COGS'},'EXPENSES [OTHER]':{bg:S.warnBg,c:S.warn,l:'OTHER'}};const s=m[cat]||{bg:S.g100,c:S.g700,l:cat};return <span style={{display:'inline-block',padding:'3px 9px',borderRadius:20,fontSize:11,fontWeight:600,background:s.bg,color:s.c,textTransform:'uppercase'}}>{s.l}</span>;}
+function CCChip({cc,idx}){return <span style={{display:'inline-flex',alignItems:'center',gap:7,fontWeight:600,fontSize:13}}><span style={{width:8,height:8,borderRadius:'50%',background:ccColor(idx)}}/><strong>{cc}</strong></span>;}
+function Metric({label,value,accent,cls}){const color=cls==='danger'?S.danger:cls==='success'?S.success:cls==='info'?S.info:S.g900;return <div style={{background:S.white,border:`1px solid ${S.g200}`,borderRadius:S.radiusLg,padding:'16px 18px',position:'relative',overflow:'hidden',flex:1,minWidth:120}}><div style={{position:'absolute',top:0,left:0,right:0,height:3,background:accent||S.brand}}/><div style={{fontSize:11,fontWeight:600,color:S.g500,marginBottom:6,letterSpacing:.5,textTransform:'uppercase'}}>{label}</div><div style={{fontSize:20,fontWeight:700,letterSpacing:-1,color}}>{value}</div></div>;}
+function Toast({toasts}){return <div style={{position:'fixed',top:64,right:24,zIndex:9999,display:'flex',flexDirection:'column',gap:8}}>{toasts.map(t=><div key={t.id} style={{padding:'10px 16px',borderRadius:8,fontSize:13,fontWeight:500,maxWidth:360,background:t.type==='success'?S.successBg:t.type==='error'?S.dangerBg:S.infoBg,color:t.type==='success'?S.success:t.type==='error'?S.danger:S.info,border:`1px solid ${t.type==='success'?'#b7e0c8':t.type==='error'?'#f5c0bb':'#c0d8f5'}`,boxShadow:'0 4px 16px rgba(0,0,0,.12)'}}>{t.msg}</div>)}</div>;}
+function Empty({icon,text}){return <div style={{textAlign:'center',padding:'52px 0',color:S.g300,fontSize:13}}><div style={{fontSize:32,marginBottom:12,opacity:.5}}>{icon}</div>{text}</div>;}
+
+function App(){const[tab,setTab]=useState('upload');const[month,setMonth]=useState(12);const[year,setYear]=useState(2025);const[files,setFiles]=useState({candis:null,datev:null,cdh:null,opening:null});const[fileNames,setFileNames]=useState({candis:null,datev:null,cdh:null,opening:null});const[mapping,setMapping]=useState([...DEFAULT_MAPPING]);const[results,setResults]=useState(null);const[decisions,setDecisions]=useState({});const[invDec,setInvDec]=useState({});const[finalized,setFinalized]=useState(false);const[toasts,setToasts]=useState([]);const[expandedCC,setExpandedCC]=useState(null);const[candisDetailSort,setCandisDetailSort]=useState({key:null,dir:'asc'});const[datevDetailSort,setDatevDetailSort]=useState({key:null,dir:'asc'});const[varFilter,setVarFilter]=useState('');const[varSearch,setVarSearch]=useState('');const[varSort,setVarSort]=useState({key:null,dir:'asc'});const[invSearch,setInvSearch]=useState('');const[invSort,setInvSort]=useState({key:null,dir:'asc'});const[marginFilter,setMarginFilter]=useState('');const[marginSearch,setMarginSearch]=useState('');const[marginSort,setMarginSort]=useState({key:null,dir:'asc'});
+const[mrgMode,setMrgMode]=useState('auto'); // 'auto' | 'manual'
+const[mrgMin,setMrgMin]=useState('');
+const[mrgMax,setMrgMax]=useState('');
+const[expandedMarginCC,setExpandedMarginCC]=useState(null);const[mapSearch,setMapSearch]=useState('');const[mfCode,setMfCode]=useState('');const[mfCat,setMfCat]=useState('EXPENSES [COGS]');const[mfDe,setMfDe]=useState('');const[mfEn,setMfEn]=useState('');const[manualPopup,setManualPopup]=useState(null);const[manualVal,setManualVal]=useState('');const fileRefs={candis:useRef(),datev:useRef(),cdh:useRef(),opening:useRef()};const toastId=useRef(0);
+// ─── SAVED MONTHS SYSTEM ─────────────────────────────────────────────────────
+const[savedMonths,setSavedMonths]=useState({}); // {key: {period, month, year, approvedAt, closingData:{cc:val}, decisions, invDec}}
+const[openingSrc,setOpeningSrc]=useState('upload'); // 'upload' | 'saved'
+const[openingSavedKey,setOpeningSavedKey]=useState('');
+const[savedMonthsLoading,setSavedMonthsLoading]=useState(true);
+
+// Load all saved months from Supabase on mount
+useEffect(()=>{(async()=>{try{const loaded=await loadAllMonths();setSavedMonths(loaded);setSavedMonthsLoading(false);}catch(e){console.error(e);setSavedMonthsLoading(false);}})();},[]);
+
+// Save / approve a month
+const approveMonth=useCallback(async()=>{if(!results||!invRows.length)return;const key=`recon:${year}-${String(month).padStart(2,'0')}`;const closingData={};invRows.forEach(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=src==='manual'?(d?.manualAmt||0):r.closing;closingData[r.cc]={opening:r.opening,purchase:r.finalizedPurchase,sales:r.sales,db:r.db,cogs:r.cogs,closingCalc:r.closing,source:src,finalizedClosing:fin,remarks:d?.remarks||''};});const payload={period:results.period,month,year,approvedAt:new Date().toISOString(),closingData,decisions:{...decisions},invDec:{...invDec}};try{await saveMonth(key,payload);setSavedMonths(p=>({...p,[key]:payload}));addToast(`✓ ${results.period} approved & saved to cloud`,'success');}catch(e){addToast('Save failed: '+e.message,'error');}},[results,invRows,invDec,decisions,month,year,addToast]);
+
+// Delete a saved month
+const deleteSavedMonth2=useCallback(async(key)=>{try{await deleteMonth(key);setSavedMonths(p=>{const n={...p};delete n[key];return n;});addToast('Deleted from cloud','info');}catch(e){addToast('Delete failed','error');}},[addToast]);
+
+// Load opening inventory from a saved month's closing data
+const loadOpeningFromSaved=useCallback((key)=>{const saved=savedMonths[key];if(!saved?.closingData)return;// Convert closingData into the format parseOpening would return — a flat array-of-arrays
+// We synthesize fake rows that parseOpening can handle, with CC at col 1 and value at col 7
+const fakeRows=[['','Cost Centre','','','','','','Final_Closing']]; // header
+Object.entries(saved.closingData).forEach(([cc,d])=>{const row=[];row[1]=parseInt(cc,10);row[7]=d.finalizedClosing;fakeRows.push(row);});setFiles(p=>({...p,opening:fakeRows}));setFileNames(p=>({...p,opening:`✓ From ${saved.period} · ${Object.keys(saved.closingData).length} CCs`}));setOpeningSavedKey(key);addToast(`Opening loaded from ${saved.period}`,'success');},[savedMonths,addToast]);
+
+// Load a full saved month for revisiting
+const loadSavedMonth=useCallback((key)=>{const saved=savedMonths[key];if(!saved)return;setMonth(saved.month);setYear(saved.year);setDecisions(saved.decisions||{});setInvDec(saved.invDec||{});addToast(`Loaded ${saved.period} decisions — upload files & run to continue`,'info');setTab('upload');},[savedMonths,addToast]);
+
+// Sorted saved months list (newest first)
+const savedMonthsList=useMemo(()=>Object.entries(savedMonths).sort((a,b)=>b[0].localeCompare(a[0])),[savedMonths]);
+const addToast=useCallback((msg,type='info')=>{const id=++toastId.current;setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3500);},[]);
+useEffect(()=>{loadXlsxStyle();},[]);
+const handleFile=useCallback((key,e)=>{const f=e.target.files[0];if(!f)return;setFileNames(p=>({...p,[key]:f.name+' — reading...'}));const reader=new FileReader();reader.onerror=()=>{setFileNames(p=>({...p,[key]:f.name+' — ERROR'}));addToast('Failed','error');};reader.onload=ev=>{try{const wb=window.XLSX.read(new Uint8Array(ev.target.result),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const data=window.XLSX.utils.sheet_to_json(ws,{header:1,defval:null});setFiles(p=>({...p,[key]:data}));setFileNames(p=>({...p,[key]:`✓ ${f.name} · ${data.length} rows`}));addToast(`${f.name} loaded`,'success');}catch(err){setFileNames(p=>({...p,[key]:f.name+' — error'}));addToast(err.message,'error');}};reader.readAsArrayBuffer(f);},[addToast]);
+const allLoaded=files.candis&&files.datev&&files.cdh&&files.opening;
+const runRecon=useCallback(()=>{if(!allLoaded)return;try{const accMap=new Map(mapping.map(m=>[m.accCode,m.category]));const cM=parseCandis(files.candis,month,year);const dM=parseDATEV(files.datev,accMap,month,year);const cdh=parseCDH(files.cdh,month,year);const oM=parseOpening(files.opening);const allCC=new Set([...[...cM.keys()].filter(c=>c>=300000&&c<=399999),...[...dM.keys()].filter(c=>c>=300000&&c<=399999)]);const vr=[...allCC].sort((a,b)=>a-b).map((cc,i)=>{const c=cM.get(cc)?.net||0,d=dM.get(cc)?.total||0,diff=c-d,mx=Math.max(Math.abs(c),Math.abs(d)),pct=mx>0?Math.abs(diff)/mx*100:0;return{cc,candisNet:c,datevNet:d,diff,pct,colorIdx:i,status:Math.abs(diff)<=1?'Match':pct<5?'Minor':'Variance',project:cM.get(cc)?.project||''};});setResults({candisMap:cM,datevMap:dM,cdhMap:cdh,openMap:oM,varRows:vr,period:MONTHS[month]+' '+year});setDecisions({});setInvDec({});setFinalized(false);addToast(`Done — ${MONTHS[month]} ${year}`,'success');setTab('variance');}catch(err){addToast('Error: '+err.message,'error');}},[files,mapping,month,year,allLoaded,addToast]);
+const getFinPur=useCallback(cc=>{if(!results)return 0;const dv=results.datevMap.get(cc)?.total||0,cv=results.candisMap.get(cc)?.net||0,vr=results.varRows.find(r=>r.cc===cc),st=vr?.status||'Match',dec=decisions[cc];if(st==='Match')return dv;if(dec?.source==='candis')return cv;if(dec?.source==='manual')return dec.manualAmt||0;return dv;},[results,decisions]);
+const invRows=useMemo(()=>{if(!results)return[];const{varRows,datevMap,cdhMap,openMap}=results;const allCC=new Set([...varRows.map(r=>r.cc),...openMap.keys(),...cdhMap.keys()]);return[...allCC].filter(c=>c>=300000&&c<=399999).sort((a,b)=>a-b).map((cc,i)=>{const op=openMap.get(cc)||0,fp=getFinPur(cc),cdh=cdhMap.get(cc)||{cogs:0,netto:0,db:0};return{cc,opening:op,finalizedPurchase:fp,sales:cdh.netto,db:cdh.db,cogs:cdh.cogs,closing:op+fp-cdh.cogs,colorIdx:i};}).filter(r=>r.opening||r.finalizedPurchase||r.sales||r.cogs);},[results,getFinPur]);
+const marginRows=useMemo(()=>{if(!results?.cdhMap)return[];const rows=[];results.cdhMap.forEach((d,cc)=>{if(cc<300000||cc>399999)return;const invSet=new Set();(d.lines||[]).forEach(ln=>invSet.add(ln.invoiceNo));rows.push({cc,netto:d.netto,db:d.db,cogs:d.cogs,marginPct:d.netto?d.db/d.netto*100:0,customer:d.lines?.[0]?.customer||'',invoiceCount:invSet.size});});rows.sort((a,b)=>b.netto-a.netto);return rows;},[results]);
+const mStats=useMemo(()=>{const v=marginRows.filter(r=>Math.abs(r.netto)>100).map(r=>r.marginPct).sort((a,b)=>a-b);const n=v.length;const avg=n?v.reduce((s,x)=>s+x,0)/n:0;const std=n?Math.sqrt(v.reduce((s,x)=>s+(x-avg)**2,0)/n):0;const median=n?n%2===1?v[Math.floor(n/2)]:(v[n/2-1]+v[n/2])/2:0;const spread=Math.abs(median)*0.10;const autoLow=median-spread;const autoHigh=median+spread;return{avg,std,median,autoLow,autoHigh,spread};},[marginRows]);
+
+const submitManual=()=>{const val=parseFloat(manualVal)||0;if(manualPopup.type==='var')setDecisions(p=>({...p,[manualPopup.cc]:{...p[manualPopup.cc],source:'manual',manualAmt:val}}));else setInvDec(p=>({...p,[manualPopup.cc]:{...p[manualPopup.cc],source:'manual',manualAmt:val}}));setManualPopup(null);setManualVal('');};
+const doExpVar=()=>{if(!results)return;const period=results.period;const hdr=['Cost Center','Project','Candis Net (€)','DATEV Net (€)','Difference (€)','Diff %','Status','Source','Finalized Purchase (€)','Remarks'];const rows=results.varRows.map(r=>{const dv=results.datevMap.get(r.cc)?.total||0,cv=r.candisNet,dec=decisions[r.cc],fp=getFinPur(r.cc),src=r.status==='Match'?'Match':dec?.source==='candis'?'Candis':dec?.source==='manual'?'Manual':'DATEV';return[r.cc,r.project||'',+cv.toFixed(2),+dv.toFixed(2),+(cv-dv).toFixed(2),r.pct.toFixed(1)+'%',r.status,src,+fp.toFixed(2),dec?.remarks||''];});const tC=results.varRows.reduce((s,r)=>s+r.candisNet,0),tD=results.varRows.reduce((s,r)=>s+r.datevNet,0),tF=results.varRows.reduce((s,r)=>s+getFinPur(r.cc),0);const totalRow=['TOTAL','',+tC.toFixed(2),+tD.toFixed(2),+(tC-tD).toFixed(2),'','','',+tF.toFixed(2),''];exportWorkbook([{name:'Purchase Variance',title:'Purchase Variance Report',period,headers:hdr,dataRows:rows,totalRow,colWidths:[16,28,18,18,18,12,14,14,22,35],opts:{statusCol:6}}],`purchase-variance-${period.replace(' ','-')}.xlsx`);};
+const doExpInv=()=>{if(!invRows.length)return;const period=results?.period||'';const hdr=['Cost Center','Opening Inventory (€)','Finalized Purchase (€)','CDH Sales (€)','Profit Margin (€)','COGS (€)','Source','Finalized Closing (€)','Remarks'];const rows=invRows.map(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=src==='manual'?(d?.manualAmt||0):r.closing;return[r.cc,+r.opening.toFixed(2),+r.finalizedPurchase.toFixed(2),+r.sales.toFixed(2),+r.db.toFixed(2),+r.cogs.toFixed(2),src==='manual'?'Manual':'Calculated',+fin.toFixed(2),d?.remarks||''];});const t=invRows.reduce((a,r)=>({op:a.op+r.opening,fp:a.fp+r.finalizedPurchase,sal:a.sal+r.sales,db:a.db+r.db,cogs:a.cogs+r.cogs,cl:a.cl+r.closing}),{op:0,fp:0,sal:0,db:0,cogs:0,cl:0});const totalRow=['TOTAL',+t.op.toFixed(2),+t.fp.toFixed(2),+t.sal.toFixed(2),+t.db.toFixed(2),+t.cogs.toFixed(2),'',+t.cl.toFixed(2),''];exportWorkbook([{name:'Closing Inventory',title:'Closing Inventory Report',period,headers:hdr,dataRows:rows,totalRow,colWidths:[16,20,20,18,18,18,16,22,35]}],`closing-inventory-${period.replace(' ','-')}.xlsx`);};
+const doExpMar=()=>{if(!marginRows.length)return;const period=results?.period||'';const hdr=['Cost Center','Customer','Net Sales (€)','Profit Margin (€)','COGS (€)','Margin %'];const rows=marginRows.map(r=>[r.cc,r.customer||'',+r.netto.toFixed(2),+r.db.toFixed(2),+r.cogs.toFixed(2),+(r.marginPct).toFixed(2)]);const tN=marginRows.reduce((s,r)=>s+r.netto,0),tDB=marginRows.reduce((s,r)=>s+r.db,0),tCOGS=marginRows.reduce((s,r)=>s+r.cogs,0),ov=tN?tDB/tN*100:0;const totalRow=['TOTAL','',+tN.toFixed(2),+tDB.toFixed(2),+tCOGS.toFixed(2),+ov.toFixed(2)];exportWorkbook([{name:'Profit Margin',title:'Profit Margin Analysis',period,headers:hdr,dataRows:rows,totalRow,colWidths:[16,28,18,18,18,14]}],`profit-margin-${period.replace(' ','-')}.xlsx`);};
+const doExpAll=()=>{if(!results)return;const period=results.period;const allSheets=[];
+{const hdr=['Cost Center','Project','Candis Net (€)','DATEV Net (€)','Difference (€)','Diff %','Status','Source','Finalized Purchase (€)','Remarks'];const rows=results.varRows.map(r=>{const dv=results.datevMap.get(r.cc)?.total||0,cv=r.candisNet,dec=decisions[r.cc],fp=getFinPur(r.cc),src=r.status==='Match'?'Match':dec?.source==='candis'?'Candis':dec?.source==='manual'?'Manual':'DATEV';return[r.cc,r.project||'',+cv.toFixed(2),+dv.toFixed(2),+(cv-dv).toFixed(2),r.pct.toFixed(1)+'%',r.status,src,+fp.toFixed(2),dec?.remarks||''];});const tC=results.varRows.reduce((s,r)=>s+r.candisNet,0),tD=results.varRows.reduce((s,r)=>s+r.datevNet,0),tF=results.varRows.reduce((s,r)=>s+getFinPur(r.cc),0);allSheets.push({name:'Purchase Variance',title:'Purchase Variance Report',period,headers:hdr,dataRows:rows,totalRow:['TOTAL','',+tC.toFixed(2),+tD.toFixed(2),+(tC-tD).toFixed(2),'','','',+tF.toFixed(2),''],colWidths:[16,28,18,18,18,12,14,14,22,35],opts:{statusCol:6}});}
+{const hdr=['Cost Center','Opening (€)','Purchase (€)','Sales (€)','Profit Margin (€)','COGS (€)','Source','Finalized Closing (€)','Remarks'];const rows=invRows.map(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=src==='manual'?(d?.manualAmt||0):r.closing;return[r.cc,+r.opening.toFixed(2),+r.finalizedPurchase.toFixed(2),+r.sales.toFixed(2),+r.db.toFixed(2),+r.cogs.toFixed(2),src==='manual'?'Manual':'Calculated',+fin.toFixed(2),d?.remarks||''];});const t=invRows.reduce((a,r)=>({op:a.op+r.opening,fp:a.fp+r.finalizedPurchase,sal:a.sal+r.sales,db:a.db+r.db,cogs:a.cogs+r.cogs,cl:a.cl+r.closing}),{op:0,fp:0,sal:0,db:0,cogs:0,cl:0});allSheets.push({name:'Closing Inventory',title:'Closing Inventory Report',period,headers:hdr,dataRows:rows,totalRow:['TOTAL',+t.op.toFixed(2),+t.fp.toFixed(2),+t.sal.toFixed(2),+t.db.toFixed(2),+t.cogs.toFixed(2),'',+t.cl.toFixed(2),''],colWidths:[16,18,18,18,18,18,16,22,35]});}
+if(marginRows.length){const hdr=['Cost Center','Customer','Net Sales (€)','Profit Margin (€)','COGS (€)','Margin %'];const rows=marginRows.map(r=>[r.cc,r.customer||'',+r.netto.toFixed(2),+r.db.toFixed(2),+r.cogs.toFixed(2),+(r.marginPct).toFixed(2)]);const tN=marginRows.reduce((s,r)=>s+r.netto,0),tDB=marginRows.reduce((s,r)=>s+r.db,0),tCOGS=marginRows.reduce((s,r)=>s+r.cogs,0),ov=tN?tDB/tN*100:0;allSheets.push({name:'Profit Margin',title:'Profit Margin Analysis',period,headers:hdr,dataRows:rows,totalRow:['TOTAL','',+tN.toFixed(2),+tDB.toFixed(2),+tCOGS.toFixed(2),+ov.toFixed(2)],colWidths:[16,28,18,18,18,14]});}
+exportWorkbook(allSheets,`full-reconciliation-${period.replace(' ','-')}.xlsx`);};
+
+const th={textAlign:'left',padding:'9px 14px',fontSize:11,letterSpacing:.5,textTransform:'uppercase',color:S.g500,borderBottom:`1px solid ${S.g200}`,background:S.g50,fontWeight:600,whiteSpace:'nowrap'};const thR={...th,textAlign:'right'};const td={padding:'10px 14px',borderBottom:`1px solid ${S.g100}`,color:S.g900,fontSize:13};const tdn={...td,textAlign:'right',fontVariantNumeric:'tabular-nums'};const inp={background:S.white,border:`1px solid ${S.g200}`,borderRadius:6,color:S.g900,padding:'7px 10px',fontFamily:S.font,fontSize:13,width:'100%',outline:'none'};const sel={...inp,cursor:'pointer',width:'auto'};const card={background:S.white,border:`1px solid ${S.g200}`,borderRadius:S.radiusLg,marginBottom:14,overflow:'hidden'};const eb={padding:'6px 14px',fontSize:12,fontWeight:500,border:`1px solid ${S.g200}`,borderRadius:6,cursor:'pointer',background:S.white,color:S.g700};
+const sth={...th,cursor:'pointer',userSelect:'none'};const sthR={...thR,cursor:'pointer',userSelect:'none'};const si=key=><span style={{marginLeft:4,fontSize:9,opacity:varSort.key===key?1:.3}}>{varSort.key===key&&varSort.dir==='desc'?'▼':'▲'}</span>;const ts=key=>setVarSort(p=>p.key===key?{key,dir:p.dir==='asc'?'desc':'asc'}:{key,dir:'asc'});
+const invSi=key=><span style={{marginLeft:4,fontSize:9,opacity:invSort.key===key?1:.3}}>{invSort.key===key&&invSort.dir==='desc'?'▼':'▲'}</span>;const invTs=key=>setInvSort(p=>p.key===key?{key,dir:p.dir==='asc'?'desc':'asc'}:{key,dir:'asc'});
+const marSi=key=><span style={{marginLeft:4,fontSize:9,opacity:marginSort.key===key?1:.3}}>{marginSort.key===key&&marginSort.dir==='desc'?'▼':'▲'}</span>;const marTs=key=>setMarginSort(p=>p.key===key?{key,dir:p.dir==='asc'?'desc':'asc'}:{key,dir:'asc'});
+function sortRows(rows,srt,getVal){if(!srt.key)return rows;return[...rows].sort((a,b)=>{let va=getVal(a,srt.key),vb=getVal(b,srt.key);if(typeof va==='string'&&typeof vb==='string')return srt.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);return srt.dir==='asc'?(va||0)-(vb||0):(vb||0)-(va||0);});}
+const dth={...th,fontSize:10,padding:'6px 10px'};const dthR={...dth,textAlign:'right'};const dtd={...td,fontSize:12,padding:'7px 10px'};const dtdn={...dtd,textAlign:'right',fontVariantNumeric:'tabular-nums'};
+
+return(<div style={{fontFamily:S.font,background:S.g50,color:S.g900,minHeight:'100vh',fontSize:14,lineHeight:1.5}}><style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}table{border-collapse:collapse}tr:hover td{background:${S.g50}}`}</style><Toast toasts={toasts}/>
+{manualPopup&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.4)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setManualPopup(null)}><div style={{background:S.white,borderRadius:S.radiusLg,padding:24,width:340,boxShadow:'0 20px 60px rgba(0,0,0,.2)'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:14,fontWeight:700,marginBottom:4}}>Manual Input — CC {manualPopup.cc}</div><div style={{fontSize:12,color:S.g500,marginBottom:16}}>{manualPopup.type==='var'?'Enter finalized purchase amount':'Enter finalized closing amount'}</div><input type="number" step="0.01" autoFocus style={{...inp,marginBottom:12,fontSize:15,padding:'10px 12px'}} placeholder="0.00" value={manualVal} onChange={e=>setManualVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submitManual()}/><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button style={eb} onClick={()=>setManualPopup(null)}>Cancel</button><button style={{...eb,background:S.brand,color:S.black,fontWeight:700,border:'none'}} onClick={submitManual}>Confirm</button></div></div></div>}
+{/* TOPBAR */}
+<div style={{background:S.white,borderBottom:`1px solid ${S.g200}`,padding:'0 32px',height:56,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:100}}><div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:30,height:30,borderRadius:6,background:S.brand,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:S.black}}>fi</div><div><div style={{fontSize:14,fontWeight:700,color:S.black}}>Inventory Reconciliation</div><div style={{fontSize:11,color:S.g500,marginTop:-2}}>fresh id Products Berlin</div></div></div><div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:12,padding:'4px 12px',borderRadius:20,border:`1px solid ${results?S.brandDark:S.g200}`,color:results?S.success:S.g500,fontFamily:S.mono,background:results?S.successBg:S.g50}}>{results?'✓ '+results.period:'No Data'}</span>{results&&<button onClick={()=>{setResults(null);setDecisions({});setInvDec({});setFinalized(false);addToast('Cleared','info');}} style={{fontSize:12,padding:'5px 12px',border:`1px solid ${S.g200}`,borderRadius:6,background:'transparent',color:S.g500,cursor:'pointer'}}>Clear</button>}{results&&<button style={{...eb,fontWeight:600,borderColor:S.brandDark,color:S.success}} onClick={doExpAll}>⬇ Export Full</button>}</div></div>
+<div style={{maxWidth:1200,margin:'0 auto',padding:'24px'}}>{/* TABS */}<div style={{display:'flex',gap:2,marginBottom:20,borderBottom:`2px solid ${S.g200}`}}>{[['upload','Upload'],['variance','Purchase Variance'],['inventory','Closing Inventory'],['margin','Profit Margin Analysis'],['mapping','Account Mapping']].map(([k,l])=>{const dis=(k==='inventory'||k==='margin')&&!finalized;return <button key={k} style={{padding:'10px 18px',fontSize:13,fontWeight:tab===k?600:500,cursor:dis?'default':'pointer',color:tab===k?S.black:S.g500,background:'none',border:'none',borderBottom:`2px solid ${tab===k?S.brandDark:'transparent'}`,marginBottom:-2,whiteSpace:'nowrap',opacity:dis?.4:1}} onClick={()=>!dis&&setTab(k)}>{l}</button>;})}</div>
+{/* UPLOAD */}{tab==='upload'&&<div style={{animation:'fadeIn .2s ease'}}><div style={{display:'flex',gap:10,alignItems:'center',marginBottom:16}}><label style={{fontSize:12,fontWeight:600,color:S.g500,textTransform:'uppercase',letterSpacing:.5}}>Period:</label><select style={sel} value={month} onChange={e=>setMonth(+e.target.value)}>{MONTHS.slice(1).map((m,i)=><option key={i+1} value={i+1}>{m}</option>)}</select><select style={sel} value={year} onChange={e=>setYear(+e.target.value)}>{[2023,2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}</select></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>{[{k:'candis',i:'📥',s:'Candis',l:'Purchase Orders'},{k:'datev',i:'📒',s:'DATEV',l:'Full Ledger'},{k:'cdh',i:'🧾',s:'CDH',l:'Sales & Margin'}].map(({k,i:ic,s,l})=><div key={k} style={{border:`1.5px ${files[k]?'solid':'dashed'} ${files[k]?S.brandDark:S.g200}`,borderRadius:S.radiusLg,padding:'20px 16px',cursor:'pointer',textAlign:'center',background:files[k]?'#f7fce8':S.white}} onClick={()=>fileRefs[k].current?.click()}><input ref={fileRefs[k]} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>handleFile(k,e)}/><div style={{fontSize:22,marginBottom:6}}>{ic}</div><div style={{fontSize:10,color:S.brandDark,letterSpacing:.8,textTransform:'uppercase',fontWeight:700,marginBottom:3}}>{s}</div><div style={{fontSize:13,fontWeight:600,marginBottom:3}}>{l}</div><div style={{fontSize:11,color:files[k]?S.success:S.g500}}>{fileNames[k]||'Select file · .xlsx'}</div></div>)}
+{/* Opening Inventory — with source toggle */}
+<div style={{border:`1.5px ${files.opening?'solid':'dashed'} ${files.opening?S.brandDark:S.g200}`,borderRadius:S.radiusLg,padding:'16px',background:files.opening?'#f7fce8':S.white}}>
+<div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:10}}>
+<span style={{fontSize:22}}>📦</span>
+<div style={{textAlign:'center'}}><div style={{fontSize:10,color:S.brandDark,letterSpacing:.8,textTransform:'uppercase',fontWeight:700}}>Opening Inventory</div></div>
+</div>
+<div style={{display:'flex',gap:4,marginBottom:10,background:S.g100,borderRadius:6,padding:2}}>
+<button onClick={()=>{setOpeningSrc('upload');}} style={{flex:1,padding:'5px 8px',fontSize:11,fontWeight:openingSrc==='upload'?700:500,background:openingSrc==='upload'?S.white:'transparent',border:'none',borderRadius:5,cursor:'pointer',color:openingSrc==='upload'?S.black:S.g500}}>📄 Upload File</button>
+<button onClick={()=>{setOpeningSrc('saved');}} style={{flex:1,padding:'5px 8px',fontSize:11,fontWeight:openingSrc==='saved'?700:500,background:openingSrc==='saved'?S.white:'transparent',border:'none',borderRadius:5,cursor:'pointer',color:openingSrc==='saved'?S.black:S.g500}}>💾 From Saved</button>
+</div>
+{openingSrc==='upload'?<>
+<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>fileRefs.opening.current?.click()}>
+<input ref={fileRefs.opening} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>handleFile('opening',e)}/>
+<div style={{fontSize:13,fontWeight:600,marginBottom:3}}>Upload File</div>
+<div style={{fontSize:11,color:files.opening?S.success:S.g500}}>{fileNames.opening||'Select file · .xlsx'}</div>
+</div>
+</>:<>
+{savedMonthsList.length?<>
+<select style={{...sel,width:'100%',fontSize:12,padding:'7px 10px'}} value={openingSavedKey} onChange={e=>{if(e.target.value)loadOpeningFromSaved(e.target.value);setOpeningSavedKey(e.target.value);}}>
+<option value="">— Select saved month —</option>
+{savedMonthsList.map(([k,v])=><option key={k} value={k}>{v.period} (saved {new Date(v.approvedAt).toLocaleDateString('en-GB')})</option>)}
+</select>
+<div style={{fontSize:11,color:files.opening?S.success:S.g500,marginTop:6,textAlign:'center'}}>{fileNames.opening||'Select a month above'}</div>
+</>:<div style={{fontSize:12,color:S.g500,textAlign:'center',padding:'8px 0'}}>No saved months yet. Approve a closing inventory first.</div>}
+</>}
+</div>
+</div>
+<button style={{width:'100%',padding:13,fontSize:14,fontWeight:700,background:allLoaded?S.brand:S.g200,color:allLoaded?S.black:S.g500,border:'none',borderRadius:S.radius,cursor:allLoaded?'pointer':'default',opacity:allLoaded?1:.4}} onClick={runRecon} disabled={!allLoaded}>▶ {allLoaded?'Run Reconciliation':'Upload all 4 files'}</button>
+{/* SAVED MONTHS LOG */}
+{savedMonthsList.length>0&&<div style={{marginTop:20}}>
+<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}><div style={{width:8,height:8,borderRadius:'50%',background:S.info}}/><span style={{fontSize:14,fontWeight:700}}>Saved Months</span><span style={{fontSize:11,color:S.g500}}>({savedMonthsList.length})</span></div>
+<div style={card}><div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={th}>Period</th><th style={th}>Approved</th><th style={thR}>Cost Centers</th><th style={thR}>Total Closing</th><th style={th}></th></tr></thead>
+<tbody>{savedMonthsList.map(([k,v])=>{const ccCount=Object.keys(v.closingData||{}).length;const totalClosing=Object.values(v.closingData||{}).reduce((s,d)=>s+(d.finalizedClosing||0),0);return <tr key={k}>
+<td style={{...td,fontWeight:600}}>{v.period}</td>
+<td style={{...td,fontSize:11,color:S.g500}}>{new Date(v.approvedAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} {new Date(v.approvedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</td>
+<td style={tdn}>{ccCount}</td>
+<td style={{...tdn,fontWeight:600,color:totalClosing>=0?S.success:S.danger}}>{fmt(totalClosing)}</td>
+<td style={{...td,display:'flex',gap:6,justifyContent:'flex-end'}}>
+<button onClick={()=>loadSavedMonth(k)} style={{padding:'4px 10px',fontSize:11,fontWeight:600,background:S.infoBg,color:S.info,border:`1px solid #c0d8f5`,borderRadius:4,cursor:'pointer'}}>↻ Revisit</button>
+<button onClick={()=>{if(confirm(`Delete ${v.period}?`))deleteSavedMonth2(k);}} style={{padding:'4px 10px',fontSize:11,fontWeight:600,background:S.dangerBg,color:S.danger,border:`1px solid #f5c0bb`,borderRadius:4,cursor:'pointer'}}>✕</button>
+</td></tr>;})}</tbody></table></div></div>
+</div>}
+</div>}
+{/* VARIANCE */}{tab==='variance'&&<div style={{animation:'fadeIn .2s ease'}}>{!results?<Empty icon="⚖" text="Upload and run reconciliation."/>:(()=>{const vr=results.varRows,mN=vr.filter(r=>r.status==='Match').length,vN=vr.filter(r=>r.status==='Variance').length,tC=vr.reduce((s,r)=>s+r.candisNet,0),tD=vr.reduce((s,r)=>s+r.datevNet,0),tF=vr.reduce((s,r)=>s+getFinPur(r.cc),0);let fil=vr.filter(r=>{if(varFilter&&r.status!==varFilter)return false;if(varSearch&&!String(r.cc).includes(varSearch)&&!(r.project||'').toLowerCase().includes(varSearch.toLowerCase()))return false;return true;});if(varSort.key){fil=[...fil].sort((a,b)=>{let va,vb;const k=varSort.key;if(k==='cc'){va=a.cc;vb=b.cc;}else if(k==='project'){va=a.project||'';vb=b.project||'';}else if(k==='candisNet'){va=a.candisNet;vb=b.candisNet;}else if(k==='datevNet'){va=a.datevNet;vb=b.datevNet;}else if(k==='diff'){va=a.diff;vb=b.diff;}else if(k==='pct'){va=a.pct;vb=b.pct;}else if(k==='bills'){const dDA=results.datevMap.get(a.cc),dDB=results.datevMap.get(b.cc);const sA=new Set();(dDA?.entries||[]).forEach(e=>sA.add(e.belegfeld));const sB=new Set();(dDB?.entries||[]).forEach(e=>sB.add(e.belegfeld));va=sA.size;vb=sB.size;}else if(k==='status'){const o={Match:0,Minor:1,Variance:2};va=o[a.status]||3;vb=o[b.status]||3;}else if(k==='finalized'){va=getFinPur(a.cc);vb=getFinPur(b.cc);}else{va=0;vb=0;}if(typeof va==='string')return varSort.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);return varSort.dir==='asc'?va-vb:vb-va;});}
+return <><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Purchase Variance · {results.period}</h2></div><div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap'}}><Metric label="Cost Centers" value={vr.length} accent={S.brand}/><Metric label="Matched" value={mN} accent="#1a7a4a" cls="success"/><Metric label="Variances" value={vN} accent={vN?'#c0392b':'#1a7a4a'} cls={vN?'danger':'success'}/><Metric label="Finalized Purchase" value={fmt(tF)} accent="#1a5fa8" cls="info"/></div>
+<div style={card}><div style={{padding:'12px 16px',borderBottom:`1px solid ${S.g100}`,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><span style={{fontSize:12,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>All ({vr.length})</span><div style={{display:'flex',gap:8}}><select style={{...sel,fontSize:12}} value={varFilter} onChange={e=>setVarFilter(e.target.value)}><option value="">All</option><option value="Match">Match</option><option value="Minor">Minor</option><option value="Variance">Variance</option></select><input style={{...inp,width:170}} placeholder="Search CC..." value={varSearch} onChange={e=>setVarSearch(e.target.value)}/></div></div>
+<div style={{overflowX:'auto'}}><table style={{width:'100%',fontSize:13}}><thead><tr><th style={{...th,width:22}}></th><th style={sth} onClick={()=>ts('cc')}>CC{si('cc')}</th><th style={sth} onClick={()=>ts('project')}>Project{si('project')}</th><th style={sthR} onClick={()=>ts('bills')}># Bills{si('bills')}</th><th style={sthR} onClick={()=>ts('candisNet')}>Candis{si('candisNet')}</th><th style={sthR} onClick={()=>ts('datevNet')}>DATEV{si('datevNet')}</th><th style={sthR} onClick={()=>ts('diff')}>Diff{si('diff')}</th><th style={sthR} onClick={()=>ts('pct')}>%{si('pct')}</th><th style={sth} onClick={()=>ts('status')}>Status{si('status')}</th><th style={th}>Source</th><th style={sthR} onClick={()=>ts('finalized')}>Finalized{si('finalized')}</th><th style={th}>Remarks</th></tr></thead>
+<tbody>{fil.map(r=>{const fp=getFinPur(r.cc),dec=decisions[r.cc],isE=expandedCC===r.cc,cD=results.candisMap.get(r.cc),dD=results.datevMap.get(r.cc);const billSet=new Set();(dD?.entries||[]).forEach(e=>billSet.add(e.belegfeld));const billCount=billSet.size;return[<tr key={r.cc} onClick={()=>{setExpandedCC(isE?null:r.cc);setCandisDetailSort({key:null,dir:'asc'});setDatevDetailSort({key:null,dir:'asc'});}} style={{cursor:'pointer',background:isE?'#f7fce8':undefined}}><td style={{...td,textAlign:'center',color:S.g300,fontSize:11}}><span style={{display:'inline-block',transform:isE?'rotate(90deg)':'none',transition:'transform .2s'}}>▶</span></td><td style={td}><CCChip cc={r.cc} idx={r.colorIdx}/></td><td style={{...td,fontSize:11,color:S.g500,maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.project||'—'}</td><td style={{...tdn,color:S.info,fontWeight:600}}>{billCount||'—'}</td><td style={tdn}>{r.candisNet?fmt(r.candisNet):'—'}</td><td style={tdn}>{r.datevNet?fmt(r.datevNet):'—'}</td><td style={{...tdn,color:Math.abs(r.diff)<=1?S.g300:r.diff<0?S.danger:undefined}}>{Math.abs(r.diff)<=1?'≈ 0':(r.diff>=0?'+':'')+fmt(r.diff)}</td><td style={tdn}>{Math.abs(r.diff)<=1?'—':r.pct.toFixed(1)+'%'}</td><td style={td}><Pill status={r.status}/></td>
+<td style={td} onClick={e=>e.stopPropagation()}>{r.status!=='Match'?<select style={{padding:'3px 6px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:12,background:S.white,cursor:'pointer'}} value={dec?.source||'datev'} onChange={e=>{if(e.target.value==='manual'){setManualPopup({cc:r.cc,type:'var'});setManualVal(dec?.manualAmt?.toString()||'');}else setDecisions(p=>({...p,[r.cc]:{...p[r.cc],source:e.target.value}}));}}><option value="datev">DATEV</option><option value="candis">Candis</option><option value="manual">Manual Input</option></select>:<span style={{fontSize:11,color:S.g300}}>Match</span>}</td>
+<td style={{...tdn,fontWeight:600,color:fp<0?S.danger:undefined}}>{fmt(fp)}</td>
+<td style={td} onClick={e=>e.stopPropagation()}>{r.status!=='Match'?<input type="text" placeholder="Remarks..." style={{width:110,padding:'3px 6px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:11,background:S.white}} value={dec?.remarks||''} onChange={e=>setDecisions(p=>({...p,[r.cc]:{...p[r.cc],remarks:e.target.value}}))}/>:<span style={{fontSize:10,color:S.g300}}>—</span>}</td></tr>,
+isE&&<tr key={r.cc+'-d'}><td colSpan={12} style={{padding:'0 14px 14px',borderTop:`1px solid ${S.g100}`,background:S.white}}><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:12}}>
+<div style={{background:S.g50,borderRadius:S.radius,overflow:'hidden',border:`1px solid ${S.g200}`}}><div style={{padding:'8px 12px',fontSize:11,fontWeight:600,letterSpacing:.5,textTransform:'uppercase',background:'#f7fce8',color:S.success,borderBottom:'1px solid #b7e0c8'}}>📥 Candis ({cD?.count||0})</div>{cD?.bills?.length?(()=>{const cs=candisDetailSort;const csi=k=><span style={{marginLeft:3,fontSize:8,opacity:cs.key===k?1:.3}}>{cs.key===k&&cs.dir==='desc'?'▼':'▲'}</span>;const cts=k=>setCandisDetailSort(p=>p.key===k?{key:k,dir:p.dir==='asc'?'desc':'asc'}:{key:k,dir:'asc'});const sdth={...dth,cursor:'pointer',userSelect:'none'};const sdthR={...dthR,cursor:'pointer',userSelect:'none'};const sorted=sortRows([...cD.bills],cs,(b,k)=>k==='billNo'?b.billNo:k==='vendor'?b.vendor:k==='date'?b.date:k==='currency'?b.currency:k==='status'?b.status:k==='gross'?b.gross:k==='tax'?b.tax:k==='net'?b.net:0);return <div style={{overflowX:'auto'}}><table style={{width:'100%',fontSize:11}}><thead><tr><th style={sdth} onClick={()=>cts('billNo')}>Bill No.{csi('billNo')}</th><th style={sdth} onClick={()=>cts('vendor')}>Vendor{csi('vendor')}</th><th style={sdth} onClick={()=>cts('date')}>Date{csi('date')}</th><th style={sdth} onClick={()=>cts('currency')}>CCY{csi('currency')}</th><th style={sdth} onClick={()=>cts('status')}>Status{csi('status')}</th><th style={sdthR} onClick={()=>cts('gross')}>Gross{csi('gross')}</th><th style={sdthR} onClick={()=>cts('tax')}>Tax%{csi('tax')}</th><th style={sdthR} onClick={()=>cts('net')}>Net{csi('net')}</th></tr></thead><tbody>{sorted.map((b,i)=><tr key={i}><td style={dtd}>{b.billNo}</td><td style={{...dtd,maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={b.vendor}>{b.vendor}</td><td style={dtd}>{b.date}</td><td style={{...dtd,fontSize:10}}>{b.currency}</td><td style={dtd}><span style={{padding:'2px 7px',borderRadius:12,fontSize:10,fontWeight:600,background:b.status.toLowerCase().includes('export')?S.successBg:S.warnBg,color:b.status.toLowerCase().includes('export')?S.success:S.warn}}>{b.status}</span></td><td style={dtdn}>{fmt(b.gross)}</td><td style={dtdn}>{b.tax?b.tax+'%':'0%'}</td><td style={{...dtdn,fontWeight:600}}>{fmt(b.net)}</td></tr>)}</tbody></table><div style={{padding:'7px 10px',fontWeight:700,fontSize:11,background:S.g50,borderTop:`2px solid ${S.g200}`,textAlign:'right'}}>Gross: {fmt(cD.gross)} | Net: <strong>{fmt(cD.net)}</strong></div></div>;})():<div style={{padding:16,color:S.g300,fontSize:12,textAlign:'center'}}>No Candis invoices.</div>}</div>
+<div style={{background:S.g50,borderRadius:S.radius,overflow:'hidden',border:`1px solid ${S.g200}`}}><div style={{padding:'8px 12px',fontSize:11,fontWeight:600,letterSpacing:.5,textTransform:'uppercase',background:S.infoBg,color:S.info,borderBottom:'1px solid #c0d8f5'}}>📒 DATEV ({dD?.entries?.length||0})</div>{dD?.entries?.length?(()=>{const ds=datevDetailSort;const dsi=k=><span style={{marginLeft:3,fontSize:8,opacity:ds.key===k?1:.3}}>{ds.key===k&&ds.dir==='desc'?'▼':'▲'}</span>;const dts=k=>setDatevDetailSort(p=>p.key===k?{key:k,dir:p.dir==='asc'?'desc':'asc'}:{key:k,dir:'asc'});const sdth2={...dth,cursor:'pointer',userSelect:'none'};const sdthR2={...dthR,cursor:'pointer',userSelect:'none'};const sorted=sortRows([...dD.entries],ds,(en,k)=>k==='belegfeld'?en.belegfeld:k==='date'?en.date:k==='text'?en.text:k==='accCode'?en.accCode:k==='accEn'?(mapping.find(m=>m.accCode===en.accCode)?.descEn||''):k==='currency'?en.currency:k==='net'?en.net:0);return <div style={{overflowX:'auto'}}><table style={{width:'100%',fontSize:11}}><thead><tr><th style={sdth2} onClick={()=>dts('belegfeld')}>Bill No.{dsi('belegfeld')}</th><th style={sdth2} onClick={()=>dts('date')}>Date{dsi('date')}</th><th style={sdth2} onClick={()=>dts('text')}>Description{dsi('text')}</th><th style={sdth2} onClick={()=>dts('accCode')}>Acc.{dsi('accCode')}</th><th style={sdth2} onClick={()=>dts('accEn')}>Account (EN){dsi('accEn')}</th><th style={sdth2} onClick={()=>dts('currency')}>CCY{dsi('currency')}</th><th style={sdthR2} onClick={()=>dts('net')}>Net{dsi('net')}</th></tr></thead><tbody>{sorted.map((en,i)=>{const me=mapping.find(m=>m.accCode===en.accCode);return <tr key={i}><td style={dtd}>{en.belegfeld}</td><td style={dtd}>{en.date}</td><td style={{...dtd,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={en.text}>{en.text}</td><td style={{...dtd,fontWeight:600}}>{en.accCode}</td><td style={{...dtd,fontSize:10,color:S.g500}}>{me?.descEn||'—'}</td><td style={{...dtd,fontSize:10}}>{en.currency}</td><td style={{...dtdn,fontWeight:600,color:en.net<0?S.danger:undefined}}>{fmt(en.net)}</td></tr>;})}</tbody></table><div style={{padding:'7px 10px',fontWeight:700,fontSize:11,background:S.g50,borderTop:`2px solid ${S.g200}`,textAlign:'right'}}>Net: <strong>{fmt(dD.total)}</strong></div></div>;})():<div style={{padding:16,color:S.g300,fontSize:12,textAlign:'center'}}>No DATEV entries.</div>}</div>
+</div></td></tr>];})}</tbody>
+<tfoot><tr style={{background:S.g50,borderTop:`2px solid ${S.g200}`,fontWeight:700}}><td style={td}></td><td colSpan={2} style={td}>TOTAL</td><td style={tdn}></td><td style={tdn}>{fmt(tC)}</td><td style={tdn}>{fmt(tD)}</td><td style={{...tdn,color:Math.abs(tC-tD)>1?S.danger:undefined}}>{fmt(tC-tD)}</td><td style={tdn}>—</td><td style={td}></td><td style={td}></td><td style={{...tdn,fontWeight:700}}>{fmt(tF)}</td><td style={td}></td></tr></tfoot></table></div>
+<div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`,flexWrap:'wrap'}}><button style={eb} onClick={doExpVar}>⬇ Export Variance</button><button style={{...eb,background:S.brand,color:S.black,fontWeight:700,border:'none'}} onClick={()=>{setFinalized(true);addToast('Purchases finalized','success');setTab('inventory');}}>✓ Finalize Purchases</button></div></div></>;})()}</div>}
+{/* INVENTORY */}{tab==='inventory'&&<div style={{animation:'fadeIn .2s ease'}}>{!finalized?<Empty icon="📦" text="Finalize purchases first."/>:(()=>{const t=invRows.reduce((a,r)=>({op:a.op+r.opening,fp:a.fp+r.finalizedPurchase,sal:a.sal+r.sales,cogs:a.cogs+r.cogs,cl:a.cl+r.closing,db:a.db+r.db}),{op:0,fp:0,sal:0,cogs:0,cl:0,db:0});const fil=invRows.filter(r=>!invSearch||String(r.cc).includes(invSearch));return <><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Closing Inventory · {results.period}</h2></div><div style={{background:S.infoBg,border:'1px solid #c0d8f5',borderRadius:S.radius,padding:'10px 14px',fontSize:12,color:S.info,marginBottom:16,fontFamily:S.mono}}>Closing = Opening + Purchase − COGS</div><div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap'}}><Metric label="Opening" value={fmt(t.op)} accent="#1a5fa8" cls="info"/><Metric label="Purchase" value={fmt(t.fp)} accent={S.brandDark}/><Metric label="− COGS" value={fmt(t.cogs)} accent="#c0392b" cls="danger"/><Metric label="= Closing" value={fmt(t.cl)} accent={t.cl>=0?'#1a7a4a':'#c0392b'} cls={t.cl>=0?'success':'danger'}/></div>
+<div style={card}><div style={{padding:'12px 16px',borderBottom:`1px solid ${S.g100}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>By Cost Center</span><input style={{...inp,width:170}} placeholder="Search CC..." value={invSearch} onChange={e=>setInvSearch(e.target.value)}/></div><div style={{overflowX:'auto'}}>{(()=>{let fil=invRows.filter(r=>!invSearch||String(r.cc).includes(invSearch));fil=sortRows(fil,invSort,(r,k)=>k==='cc'?r.cc:k==='opening'?r.opening:k==='purchase'?r.finalizedPurchase:k==='sales'?r.sales:k==='db'?r.db:k==='cogs'?r.cogs:k==='closing'?r.closing:0);return <table style={{width:'100%'}}><thead><tr><th style={sth} onClick={()=>invTs('cc')}>CC{invSi('cc')}</th><th style={sthR} onClick={()=>invTs('opening')}>Opening{invSi('opening')}</th><th style={sthR} onClick={()=>invTs('purchase')}>Purchase{invSi('purchase')}</th><th style={sthR} onClick={()=>invTs('sales')}>Sales{invSi('sales')}</th><th style={sthR} onClick={()=>invTs('db')}>Profit Margin{invSi('db')}</th><th style={sthR} onClick={()=>invTs('cogs')}>COGS{invSi('cogs')}</th><th style={sthR} onClick={()=>invTs('closing')}>Closing (Calc){invSi('closing')}</th><th style={th}>Source</th><th style={thR}>Finalized</th><th style={th}>Remarks</th></tr></thead><tbody>{fil.map(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=src==='manual'?(d?.manualAmt||0):r.closing;return <tr key={r.cc}><td style={td}><CCChip cc={r.cc} idx={r.colorIdx}/></td><td style={tdn}>{fmt(r.opening)}</td><td style={tdn}>{fmt(r.finalizedPurchase)}</td><td style={tdn}>{r.sales?fmt(r.sales):'—'}</td><td style={{...tdn,color:S.success}}>{r.db?fmt(r.db):'—'}</td><td style={{...tdn,color:S.danger}}>{r.cogs?fmt(r.cogs):'—'}</td><td style={tdn}>{fmt(r.closing)}</td><td style={td}><select style={{padding:'3px 6px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:12,background:S.white,cursor:'pointer'}} value={src} onChange={e=>{if(e.target.value==='manual'){setManualPopup({cc:r.cc,type:'inv'});setManualVal(d?.manualAmt?.toString()||'');}else setInvDec(p=>({...p,[r.cc]:{...p[r.cc],source:e.target.value}}));}}><option value="calculated">Calculated</option><option value="manual">Manual Input</option></select></td><td style={{...tdn,fontWeight:600,color:fin<0?S.danger:S.success}}>{fmt(fin)}</td><td style={td}><input type="text" placeholder="Remarks..." style={{width:110,padding:'3px 6px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:11,background:S.white}} value={d?.remarks||''} onChange={e=>setInvDec(p=>({...p,[r.cc]:{...p[r.cc],remarks:e.target.value}}))}/></td></tr>;})}</tbody><tfoot><tr style={{background:S.g50,borderTop:`2px solid ${S.g200}`,fontWeight:700}}><td style={td}>TOTAL</td><td style={tdn}>{fmt(t.op)}</td><td style={tdn}>{fmt(t.fp)}</td><td style={tdn}>{fmt(t.sal)}</td><td style={{...tdn,color:S.success}}>{fmt(t.db)}</td><td style={{...tdn,color:S.danger}}>{fmt(t.cogs)}</td><td style={tdn}>{fmt(t.cl)}</td><td style={td}></td><td style={{...tdn,fontWeight:700}}>{fmt(t.cl)}</td><td style={td}></td></tr></tfoot></table>;})()}</div><div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`,flexWrap:'wrap'}}><button style={eb} onClick={doExpInv}>⬇ Export Inventory</button><button style={{...eb,background:S.brand,color:S.black,fontWeight:700,border:'none'}} onClick={approveMonth}>✓ Approve & Save Month</button>{savedMonths[`recon:${year}-${String(month).padStart(2,'0')}`]&&<span style={{fontSize:11,color:S.success,alignSelf:'center'}}>✓ Saved {new Date(savedMonths[`recon:${year}-${String(month).padStart(2,'0')}`].approvedAt).toLocaleDateString('en-GB')}</span>}</div></div></>;})()}</div>}
+{/* MARGIN */}{tab==='margin'&&<div style={{animation:'fadeIn .2s ease'}}>{!finalized?<Empty icon="📊" text="Finalize purchases first."/>:!marginRows.length?<Empty icon="📊" text="No CDH data."/>:(()=>{const{avg,median,autoLow,autoHigh,spread}=mStats;const lo=mrgMode==='manual'?(parseFloat(mrgMin)||0):autoLow;const hi=mrgMode==='manual'?(parseFloat(mrgMax)||100):autoHigh;const refVal=mrgMode==='manual'?(lo+hi)/2:median;const tN=marginRows.reduce((s,r)=>s+r.netto,0),tDB=marginRows.reduce((s,r)=>s+r.db,0),ov=tN?tDB/tN*100:0;const flagCC=r=>{if(Math.abs(r.netto)<=100)return{c:'',l:'Low vol.'};if(r.marginPct>hi)return{c:'high',l:'▲ High'};if(r.marginPct<lo)return{c:'low',l:'▼ Low'};return{c:'ok',l:'Normal'};};const fH=marginRows.filter(r=>Math.abs(r.netto)>100&&r.marginPct>hi).length,fL=marginRows.filter(r=>Math.abs(r.netto)>100&&r.marginPct<lo).length;const mx=Math.max(...marginRows.map(r=>Math.abs(r.marginPct)),1);const fil=marginRows.filter(r=>{const f=flagCC(r);if(marginFilter&&f.c!==marginFilter)return false;if(marginSearch&&!String(r.cc).includes(marginSearch))return false;return true;});
+return <><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Profit Margin — {results.period}</h2></div><div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap'}}><Metric label="Net Sales" value={fmt(tN)} accent={S.brandDark}/><Metric label="Profit Margin" value={fmt(tDB)} accent="#1a7a4a" cls="success"/><Metric label={mrgMode==='auto'?'Median %':'Avg %'} value={(mrgMode==='auto'?median:avg).toFixed(1)+'%'} accent="#1a5fa8" cls="info"/><Metric label="Flagged" value={fH+fL} accent={(fH+fL)>0?'#c0392b':'#1a7a4a'} cls={(fH+fL)>0?'danger':'success'}/></div>
+{/* Threshold controls */}
+<div style={{background:S.white,border:`1px solid ${S.g200}`,borderRadius:S.radiusLg,padding:'12px 16px',marginBottom:14,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+<span style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>Normal Range:</span>
+<select style={{...sel,fontSize:12,padding:'5px 10px'}} value={mrgMode} onChange={e=>{setMrgMode(e.target.value);if(e.target.value==='auto'){setMrgMin('');setMrgMax('');}}}>
+<option value="auto">Auto (Median ±10%)</option>
+<option value="manual">Manual Input</option>
+</select>
+{mrgMode==='manual'?<>
+<div style={{display:'flex',alignItems:'center',gap:6}}>
+<input type="number" step="0.1" placeholder="Min %" style={{width:80,padding:'5px 8px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:12,textAlign:'center',background:S.white}} value={mrgMin} onChange={e=>setMrgMin(e.target.value)}/>
+<span style={{color:S.g500,fontSize:12}}>% to</span>
+<input type="number" step="0.1" placeholder="Max %" style={{width:80,padding:'5px 8px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:12,textAlign:'center',background:S.white}} value={mrgMax} onChange={e=>setMrgMax(e.target.value)}/>
+<span style={{color:S.g500,fontSize:12}}>%</span>
+</div>
+</>:<div style={{fontSize:12,color:S.g500}}>
+<span style={{fontWeight:600,color:S.info}}>Median: {median.toFixed(1)}%</span>
+<span style={{margin:'0 6px'}}>·</span>
+Normal: <span style={{fontWeight:600,color:S.success}}>{autoLow.toFixed(1)}%</span> to <span style={{fontWeight:600,color:S.warn}}>{autoHigh.toFixed(1)}%</span>
+<span style={{margin:'0 6px'}}>·</span>
+<span style={{color:S.g300}}>±10% of median (±{spread.toFixed(1)}pp)</span>
+</div>}
+<div style={{marginLeft:'auto',fontSize:11,color:S.g500}}>Below <span style={{color:S.danger,fontWeight:600}}>{lo.toFixed(1)}%</span> = Low · Above <span style={{color:S.warn,fontWeight:600}}>{hi.toFixed(1)}%</span> = High</div>
+</div>
+<div style={card}><div style={{padding:'12px 16px',borderBottom:`1px solid ${S.g100}`,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}><span style={{fontSize:12,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>By CC ({marginRows.length})</span><div style={{display:'flex',gap:8}}><select style={{...sel,fontSize:12}} value={marginFilter} onChange={e=>setMarginFilter(e.target.value)}><option value="">All</option><option value="high">High</option><option value="low">Low</option><option value="ok">Normal</option></select><input style={{...inp,width:140}} placeholder="Search CC..." value={marginSearch} onChange={e=>setMarginSearch(e.target.value)}/></div></div><div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={{...th,width:22}}></th><th style={sth} onClick={()=>marTs('cc')}>CC{marSi('cc')}</th><th style={sth} onClick={()=>marTs('customer')}>Customer{marSi('customer')}</th><th style={sthR} onClick={()=>marTs('invoices')}># Inv.{marSi('invoices')}</th><th style={sthR} onClick={()=>marTs('netto')}>Net Sales{marSi('netto')}</th><th style={sthR} onClick={()=>marTs('db')}>Profit Margin{marSi('db')}</th><th style={sthR} onClick={()=>marTs('cogs')}>COGS{marSi('cogs')}</th><th style={sthR} onClick={()=>marTs('marginPct')}>Margin %{marSi('marginPct')}</th><th style={{...sth,minWidth:80}} onClick={()=>marTs('diff')}>vs Ref{marSi('diff')}</th><th style={sth} onClick={()=>marTs('flag')}>Flag{marSi('flag')}</th></tr></thead><tbody>{(()=>{const flagVal=r=>{const f=flagCC(r);return f.c==='high'?2:f.c==='low'?0:f.c==='ok'?1:3;};const sorted=sortRows(fil,marginSort,(r,k)=>k==='cc'?r.cc:k==='customer'?r.customer||'':k==='invoices'?r.invoiceCount:k==='netto'?r.netto:k==='db'?r.db:k==='cogs'?r.cogs:k==='marginPct'?r.marginPct:k==='diff'?r.marginPct-refVal:k==='flag'?flagVal(r):0);return sorted.map((r,i)=>{const f=flagCC(r),diff=r.marginPct-refVal,bp=Math.min(Math.abs(r.marginPct)/mx*100,100),bc=f.c==='high'?S.brandDark:f.c==='low'?S.danger:f.c==='ok'?S.info:S.g300;const isExp=expandedMarginCC===r.cc;const cdhD=results.cdhMap.get(r.cc);return [<tr key={r.cc} onClick={()=>setExpandedMarginCC(isExp?null:r.cc)} style={{cursor:'pointer',background:isExp?'#f7fce8':undefined}}><td style={{...td,textAlign:'center',color:S.g300,fontSize:11,width:22,padding:'10px 6px'}}><span style={{display:'inline-block',transform:isExp?'rotate(90deg)':'none',transition:'transform .2s'}}>▶</span></td><td style={td}><CCChip cc={r.cc} idx={i}/></td><td style={{...td,fontSize:11,color:S.g500,maxWidth:130,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.customer||'—'}</td><td style={{...tdn,color:S.info,fontWeight:600}}>{r.invoiceCount||'—'}</td><td style={tdn}>{fmt(r.netto)}</td><td style={{...tdn,color:S.success}}>{fmt(r.db)}</td><td style={tdn}>{fmt(r.cogs)}</td><td style={{...tdn,fontWeight:600}}>{r.marginPct.toFixed(1)}%</td><td style={td}><div style={{display:'flex',alignItems:'center',gap:6}}><div style={{flex:1,height:8,background:S.g100,borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',borderRadius:4,width:bp+'%',background:bc}}/></div><span style={{fontSize:11,fontFamily:S.mono,color:f.c==='high'?S.warn:f.c==='low'?S.danger:S.g500,minWidth:44,textAlign:'right'}}>{(diff>=0?'+':'')+diff.toFixed(1)}</span></div></td><td style={td}><span style={{fontWeight:f.c==='high'||f.c==='low'?600:400,fontSize:11,color:f.c==='high'?S.warn:f.c==='low'?S.danger:S.g300}}>{f.l}</span></td></tr>,
+isExp&&<tr key={r.cc+'-d'}><td colSpan={11} style={{padding:'0 14px 14px',borderTop:`1px solid ${S.g100}`,background:S.white}}>
+<div style={{background:S.g50,borderRadius:S.radius,overflow:'hidden',border:`1px solid ${S.g200}`,marginTop:12}}>
+<div style={{padding:'8px 12px',fontSize:11,fontWeight:600,letterSpacing:.5,textTransform:'uppercase',background:S.infoBg,color:S.info,borderBottom:'1px solid #c0d8f5',display:'flex',justifyContent:'space-between'}}>
+<span>🧾 CDH Invoice Details — CC {r.cc}</span><span style={{fontWeight:400,fontSize:10}}>{(()=>{const invMap=new Map();(cdhD?.lines||[]).forEach(ln=>{const k=ln.invoiceNo;if(!invMap.has(k))invMap.set(k,{invoiceNo:k,date:ln.date,customer:ln.customer,netto:0,db:0,cogs:0});const a=invMap.get(k);a.netto+=ln.netto;a.db+=ln.db;a.cogs+=ln.cogs;});return invMap.size;})() } invoices</span></div>
+{cdhD?.lines?.length?(()=>{const invMap=new Map();cdhD.lines.forEach(ln=>{const k=ln.invoiceNo;if(!invMap.has(k))invMap.set(k,{invoiceNo:k,date:ln.date,customer:ln.customer,netto:0,db:0,cogs:0});const a=invMap.get(k);a.netto+=ln.netto;a.db+=ln.db;a.cogs+=ln.cogs;});const grouped=[...invMap.values()];return <div style={{overflowX:'auto'}}><table style={{width:'100%',fontSize:11}}>
+<thead><tr><th style={dth}>Invoice No.</th><th style={dth}>Date</th><th style={dth}>Customer</th><th style={{...dth,textAlign:'right'}}>Net Sales (€)</th><th style={{...dth,textAlign:'right'}}>Profit Margin (€)</th><th style={{...dth,textAlign:'right'}}>COGS (€)</th><th style={{...dth,textAlign:'right'}}>Margin %</th></tr></thead>
+<tbody>{grouped.map((ln,li)=>{const lm=ln.netto?ln.db/ln.netto*100:0;return <tr key={li}>
+<td style={{...dtd,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{ln.invoiceNo}</td>
+<td style={{...dtd,whiteSpace:'nowrap',fontVariantNumeric:'tabular-nums'}}>{ln.date}</td>
+<td style={{...dtd,maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={ln.customer}>{ln.customer}</td>
+<td style={{...dtdn}}>{fmt(ln.netto)}</td>
+<td style={{...dtdn,color:ln.db>=0?S.success:S.danger}}>{fmt(ln.db)}</td>
+<td style={{...dtdn}}>{fmt(ln.cogs)}</td>
+<td style={{...dtdn,fontWeight:600,color:lm<lo?S.danger:lm>hi?S.warn:undefined}}>{lm.toFixed(1)}%</td>
+</tr>;})}</tbody></table>
+<div style={{padding:'8px 10px',fontWeight:700,fontSize:12,background:S.g50,borderTop:`2px solid ${S.g200}`,textAlign:'right',display:'flex',justifyContent:'space-between'}}>
+<span style={{color:S.g500,fontWeight:500}}>{grouped.length} invoice{grouped.length!==1?'s':''}</span>
+<span>Sales: {fmt(r.netto)} | Margin: <strong style={{color:S.success}}>{fmt(r.db)}</strong> | COGS: {fmt(r.cogs)} | <strong>{r.marginPct.toFixed(1)}%</strong></span>
+</div></div>;})():<div style={{padding:16,color:S.g300,fontSize:12,textAlign:'center'}}>No CDH line details.</div>}
+</div></td></tr>];});})()}</tbody></table></div><div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`}}><button style={eb} onClick={doExpMar}>⬇ Export Margin</button></div></div></>;})()}</div>}
+{/* MAPPING */}{tab==='mapping'&&<div style={{animation:'fadeIn .2s ease'}}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Account Mapping</h2></div><div style={{background:S.white,border:`1px solid ${S.g200}`,borderRadius:S.radiusLg,padding:16,marginBottom:14,display:'grid',gridTemplateColumns:'120px 180px 1fr 1fr auto',gap:10,alignItems:'end'}}><div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>Code</label><input style={inp} type="number" placeholder="e.g. 3400" value={mfCode} onChange={e=>setMfCode(e.target.value)}/></div><div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>Category</label><select style={inp} value={mfCat} onChange={e=>setMfCat(e.target.value)}><option value="EXPENSES [COGS]">EXPENSES [COGS]</option><option value="EXPENSES [OTHER]">EXPENSES [OTHER]</option></select></div><div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>German</label><input style={inp} placeholder="German desc." value={mfDe} onChange={e=>setMfDe(e.target.value)}/></div><div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>English</label><input style={inp} placeholder="English desc." value={mfEn} onChange={e=>setMfEn(e.target.value)}/></div><button style={{padding:'8px 18px',fontSize:13,fontWeight:700,background:S.brand,color:S.black,border:'none',borderRadius:6,cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>{const c=parseInt(mfCode,10);if(!c||isNaN(c)){addToast('Enter valid code','error');return;}if(mapping.find(m=>m.accCode===c)){addToast(`${c} exists`,'error');return;}setMapping(p=>[...p,{accCode:c,category:mfCat,descDe:mfDe.trim(),descEn:mfEn.trim()}]);setMfCode('');setMfDe('');setMfEn('');addToast(`Added ${c}`,'success');}}>+ Add</button></div>
+<div style={card}><div style={{padding:'12px 16px',borderBottom:`1px solid ${S.g100}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>Codes ({mapping.length})</span><input style={{...inp,width:200}} placeholder="Search..." value={mapSearch} onChange={e=>setMapSearch(e.target.value)}/></div><div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={th}>Code</th><th style={th}>Category</th><th style={th}>German</th><th style={th}>English</th><th style={{...th,width:40}}></th></tr></thead><tbody>{mapping.filter(m=>!mapSearch||String(m.accCode).includes(mapSearch)||m.descEn.toLowerCase().includes(mapSearch.toLowerCase())||m.descDe.toLowerCase().includes(mapSearch.toLowerCase())).sort((a,b)=>a.accCode-b.accCode).map(m=><tr key={m.accCode}><td style={{...td,fontWeight:600,fontFamily:S.mono,fontSize:13}}>{m.accCode}</td><td style={td}><CatBadge cat={m.category}/></td><td style={{...td,fontSize:12,color:S.g700}}>{m.descDe||'—'}</td><td style={{...td,fontSize:12}}>{m.descEn||'—'}</td><td style={td}><button onClick={()=>setMapping(p=>p.filter(x=>x.accCode!==m.accCode))} style={{background:'transparent',border:'none',color:S.g300,cursor:'pointer',fontSize:14,padding:'4px 8px',borderRadius:4}}>✕</button></td></tr>)}</tbody></table></div><div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`}}><button style={eb} onClick={()=>{const wb=window.XLSX.utils.book_new();window.XLSX.utils.book_append_sheet(wb,window.XLSX.utils.json_to_sheet(mapping.map(m=>({'CODE':m.accCode,CATEGORY:m.category,GERMAN:m.descDe,ENGLISH:m.descEn}))),'Mapping');window.XLSX.writeFile(wb,'account_mapping.xlsx');}}>⬇ Export Mapping</button></div></div></div>}
+</div></div>);}
+
+// Render
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
