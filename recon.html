@@ -622,8 +622,8 @@ const loadCurrentSession=useCallback(async()=>{
     setCheckedBills(deserializeCheckedBills(sess.checked_bills));setMarginCorrections(sess.margin_corrections||{});
     setExcludedCCs(deserializeExcluded(sess.excluded_ccs));
     setFinalized(sess.finalized||false);setIsApproved(sess.approved||false);setEditUnlocked(false);
-    // If approved and has closingData, reconstruct minimal results so tabs work without re-uploading files
-    if(sess.approved&&sess.closing_data){
+    // If session has closingData (approved OR previously finalized), reconstruct results so tabs work
+    if(sess.closing_data){
       const cd=sess.closing_data;
       const openMap=new Map();const cdhMap=new Map();const datevMap=new Map();const candisMap=new Map();
       const varRows=[];
@@ -636,7 +636,7 @@ const loadCurrentSession=useCallback(async()=>{
         varRows.push({cc,candisNet:d.purchase||0,datevNet:d.purchase||0,diff:0,pct:0,colorIdx:varRows.length,status:'Match',project:''});
       });
       setResults({candisMap,datevMap,cdhMap,openMap,varRows,period:sess.period||MONTHS[month]+' '+year});
-      addToast(`Loaded approved ${sess.period} — data restored from saved snapshot`,'info');
+      addToast(`Session restored for ${sess.period} — re-upload files for full detail or continue with summary`,'info');
     }
   }else{setDecisions({});setInvDec({});setManualEntries({});setCheckedBills({});setMarginCorrections({});setExcludedCCs(new Set());setFinalized(false);setIsApproved(false);setEditUnlocked(false);}
 },[month,year,addToast]);
@@ -649,9 +649,13 @@ const autoSave=useCallback(()=>{
   saveTimerRef.current=setTimeout(async()=>{
     const key=sessionKeyRef.current;if(!key)return;
     if(isApproved&&!editUnlocked)return;
-    try{const clean=k=>JSON.parse(JSON.stringify(k||{}));await upsertSession(key,{period:MONTHS[month]+' '+year,month,year,decisions:clean(decisions),inv_dec:clean(invDec),manual_entries:clean(manualEntries),checked_bills:serializeCheckedBills(checkedBills),margin_corrections:clean(marginCorrections),excluded_ccs:serializeExcluded(excludedCCs),finalized,approved:isApproved,approved_at:isApproved?new Date().toISOString():null});}catch(e){console.error('Auto-save failed:',e);}
+    try{const clean=k=>JSON.parse(JSON.stringify(k||{}));
+    // Build closing_data snapshot directly from results if available
+    let cd=null;
+    if(results){const{varRows,datevMap,cdhMap,openMap}=results;const allCC=new Set([...varRows.map(r=>r.cc),...openMap.keys(),...cdhMap.keys()]);cd={};[...allCC].filter(c=>c>=300000&&c<=399999).forEach(cc=>{const op=openMap.get(cc)||0;const dv=datevMap.get(cc)?.total||0;const cdh=cdhMap.get(cc)||{cogs:0,netto:0,db:0};const d=invDec[cc];const src=d?.source||'calculated';cd[cc]={opening:op,purchase:dv,sales:cdh.netto,db:cdh.db,cogs:cdh.cogs,closingCalc:op+dv-cdh.cogs,source:src,finalizedClosing:src==='manual'?(d?.manualAmt||0):(op+dv-cdh.cogs),remarks:d?.remarks||''};});}
+    await upsertSession(key,{period:MONTHS[month]+' '+year,month,year,decisions:clean(decisions),inv_dec:clean(invDec),manual_entries:clean(manualEntries),checked_bills:serializeCheckedBills(checkedBills),margin_corrections:clean(marginCorrections),excluded_ccs:serializeExcluded(excludedCCs),finalized,approved:isApproved,approved_at:isApproved?new Date().toISOString():null,closing_data:cd});}catch(e){console.error('Auto-save failed:',e);}
   },1500);
-},[month,year,decisions,invDec,manualEntries,checkedBills,marginCorrections,excludedCCs,finalized,isApproved,editUnlocked]);
+},[month,year,decisions,invDec,manualEntries,checkedBills,marginCorrections,excludedCCs,finalized,isApproved,editUnlocked,results]);
 
 useEffect(()=>{if(!sessionLoading)autoSave();},[decisions,invDec,manualEntries,checkedBills,marginCorrections,excludedCCs,finalized,autoSave,sessionLoading]);
 
