@@ -8,7 +8,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Inter',-apple-system,sans-serif;background:#f7f6f0;}
-@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 </style>
 <!-- CDN Dependencies -->
 <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
@@ -18,8 +18,8 @@ body{font-family:'Inter',-apple-system,sans-serif;background:#f7f6f0;}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel">
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:16px;color:#6b6a65;font-size:14px"><div style="width:32px;height:32px;border:3px solid #e2e1da;border-top-color:#C8F04D;border-radius:50%;animation:spin .8s linear infinite"></div><span>Loading...</span></div></div>
+<script id="appsrc" type="text/plain">
 // React globals from CDN
 const { useState, useRef, useCallback, useMemo, useEffect } = React;
 
@@ -29,50 +29,59 @@ const supabase = window.supabase.createClient(
   'sb_publishable_3HSsDekMnLLNSeFyKyINxQ_-omWhguz'
 );
 
+// Wrapper to suppress DataCloneError (save succeeds but response can't be cloned via postMessage)
+async function sbSafe(fn) {
+  try { return await fn(); } catch(e) {
+    if (e && e.name === 'DataCloneError') return null; // save succeeded, ignore clone error
+    throw e;
+  }
+}
+
 async function loadAllMonths() {
   const { data, error } = await supabase.from('recon_months').select('*').order('year', { ascending: false }).order('month', { ascending: false });
   if (error) { console.error('Load error:', error); return {}; }
   const result = {};
-  for (const row of (data || [])) {
-    result[row.id] = { period: row.period, month: row.month, year: row.year, approvedAt: row.approved_at, closingData: row.closing_data, decisions: row.decisions, invDec: row.inv_dec };
-  }
+  for (const row of (data || [])) result[row.id] = { period: row.period, month: row.month, year: row.year, approvedAt: row.approved_at, closingData: row.closing_data, decisions: row.decisions, invDec: row.inv_dec };
   return result;
 }
-
 async function saveMonth(key, payload) {
-  const { error } = await supabase.from('recon_months').upsert({ id: key, period: payload.period, month: payload.month, year: payload.year, approved_at: payload.approvedAt, closing_data: payload.closingData, decisions: payload.decisions, inv_dec: payload.invDec, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-  if (error) throw new Error(error.message);
+  const clean = JSON.parse(JSON.stringify({ id: key, period: payload.period, month: payload.month, year: payload.year, approved_at: payload.approvedAt, closing_data: payload.closingData, decisions: payload.decisions, inv_dec: payload.invDec, updated_at: new Date().toISOString() }));
+  await sbSafe(() => supabase.from('recon_months').upsert(clean, { onConflict: 'id' }));
 }
+async function deleteMonth(key) { await sbSafe(() => supabase.from('recon_months').delete().eq('id', key)); }
 
-async function deleteMonth(key) {
-  const { error } = await supabase.from('recon_months').delete().eq('id', key);
-  if (error) throw new Error(error.message);
-}
-
-// ─── SESSION PERSISTENCE ─────────────────────────────────────────────────────
 const EDIT_PASSWORD = 'fid2025!';
 
 async function loadAllSessions() {
   const { data, error } = await supabase.from('recon_sessions').select('*').order('year', { ascending: false }).order('month', { ascending: false });
-  if (error) { console.error('Sessions load error:', error); return []; }
+  if (error) { console.error('Sessions load:', error); return []; }
   return data || [];
 }
-
 async function loadSession(id) {
-  const { data, error } = await supabase.from('recon_sessions').select('*').eq('id', id).single();
+  const { data, error } = await supabase.from('recon_sessions').select('*').eq('id', id).maybeSingle();
   if (error) return null;
   return data;
 }
-
 async function upsertSession(id, payload) {
-  const { error } = await supabase.from('recon_sessions').upsert({ id, ...payload, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-  if (error) console.error('Session save error:', error);
+  const clean = JSON.parse(JSON.stringify({ id, ...payload, updated_at: new Date().toISOString() }));
+  await sbSafe(() => supabase.from('recon_sessions').upsert(clean, { onConflict: 'id' }));
 }
+async function deleteSession(id) { await sbSafe(() => supabase.from('recon_sessions').delete().eq('id', id)); }
 
-async function deleteSession(id) {
-  const { error } = await supabase.from('recon_sessions').delete().eq('id', id);
-  if (error) console.error('Session delete error:', error);
+// Global client remarks
+async function loadGlobalRemarks() {
+  const { data, error } = await supabase.from('client_remarks').select('*').order('cc');
+  if (error) { console.error('Remarks:', error); return []; }
+  return (data || []).map(r => ({ id: r.id, cc: r.cc, project: r.project || '', remarks: r.remarks }));
 }
+async function addGlobalRemark(cc, project, remarks) {
+  const res = await sbSafe(() => supabase.from('client_remarks').insert({ cc, project, remarks }).select().single());
+  if (res && res.data) return { id: res.data.id, cc: res.data.cc, project: res.data.project || '', remarks: res.data.remarks };
+  return { id: Date.now(), cc, project, remarks }; // fallback if clone error
+}
+async function deleteGlobalRemark(id) { await sbSafe(() => supabase.from('client_remarks').delete().eq('id', id)); }
+async function deleteGlobalRemarksByCC(cc) { await sbSafe(() => supabase.from('client_remarks').delete().eq('cc', cc)); }
+async function bulkInsertGlobalRemarks(rows) { await sbSafe(() => supabase.from('client_remarks').insert(rows.map(r => ({ cc: r.cc, project: r.project, remarks: r.remarks })))); }
 
 // Helper to serialize Sets to arrays for JSON storage
 function serializeCheckedBills(cb) {
@@ -585,16 +594,20 @@ const[clientRemarks,setClientRemarks]=useState([]);
 const[showRemarkForm,setShowRemarkForm]=useState(false);
 const[remarkForm,setRemarkForm]=useState({cc:'',project:'',remarks:''});
 const[remarkSearch,setRemarkSearch]=useState('');
+const[invRemarkFilter,setInvRemarkFilter]=useState('');
+const[selectedRemarks,setSelectedRemarks]=useState(new Set());
 // ─── SAVED MONTHS SYSTEM ─────────────────────────────────────────────────────
 const[savedMonths,setSavedMonths]=useState({}); // {key: {period, month, year, approvedAt, closingData:{cc:val}, decisions, invDec}}
 const[openingSrc,setOpeningSrc]=useState('upload'); // 'upload' | 'saved'
 const[openingSavedKey,setOpeningSavedKey]=useState('');
 const[savedMonthsLoading,setSavedMonthsLoading]=useState(true);
 
+const addToast=useCallback((msg,type='info')=>{const id=++toastId.current;setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3500);},[]);
+
 // Load sessions and saved months on mount
 useEffect(()=>{(async()=>{try{
-  const[loaded,sessions]=await Promise.all([loadAllMonths(),loadAllSessions()]);
-  setSavedMonths(loaded);setAllSessions(sessions);setSavedMonthsLoading(false);setSessionLoading(false);
+  const[loaded,sessions,globalRem]=await Promise.all([loadAllMonths(),loadAllSessions(),loadGlobalRemarks()]);
+  setSavedMonths(loaded);setAllSessions(sessions);setClientRemarks(globalRem);setSavedMonthsLoading(false);setSessionLoading(false);
 }catch(e){console.error(e);setSavedMonthsLoading(false);setSessionLoading(false);}})();},[]);
 
 // Compute session key
@@ -607,10 +620,26 @@ const loadCurrentSession=useCallback(async()=>{
   if(sess){
     setDecisions(sess.decisions||{});setInvDec(sess.inv_dec||{});setManualEntries(sess.manual_entries||{});
     setCheckedBills(deserializeCheckedBills(sess.checked_bills));setMarginCorrections(sess.margin_corrections||{});
-    setExcludedCCs(deserializeExcluded(sess.excluded_ccs));setClientRemarks(sess.client_remarks||[]);
+    setExcludedCCs(deserializeExcluded(sess.excluded_ccs));
     setFinalized(sess.finalized||false);setIsApproved(sess.approved||false);setEditUnlocked(false);
-  }else{setDecisions({});setInvDec({});setManualEntries({});setCheckedBills({});setMarginCorrections({});setExcludedCCs(new Set());setClientRemarks([]);setFinalized(false);setIsApproved(false);setEditUnlocked(false);}
-},[month,year]);
+    // If approved and has closingData, reconstruct minimal results so tabs work without re-uploading files
+    if(sess.approved&&sess.closing_data){
+      const cd=sess.closing_data;
+      const openMap=new Map();const cdhMap=new Map();const datevMap=new Map();const candisMap=new Map();
+      const varRows=[];
+      Object.entries(cd).forEach(([ccStr,d])=>{
+        const cc=parseInt(ccStr,10);
+        openMap.set(cc,d.opening||0);
+        cdhMap.set(cc,{netto:d.sales||0,db:d.db||0,cogs:d.cogs||0,lines:[]});
+        datevMap.set(cc,{total:d.purchase||0,entries:[]});
+        candisMap.set(cc,{net:d.purchase||0,bills:[],count:0});
+        varRows.push({cc,candisNet:d.purchase||0,datevNet:d.purchase||0,diff:0,pct:0,colorIdx:varRows.length,status:'Match',project:''});
+      });
+      setResults({candisMap,datevMap,cdhMap,openMap,varRows,period:sess.period||MONTHS[month]+' '+year});
+      addToast(`Loaded approved ${sess.period} — data restored from saved snapshot`,'info');
+    }
+  }else{setDecisions({});setInvDec({});setManualEntries({});setCheckedBills({});setMarginCorrections({});setExcludedCCs(new Set());setFinalized(false);setIsApproved(false);setEditUnlocked(false);}
+},[month,year,addToast]);
 
 useEffect(()=>{if(!sessionLoading)loadCurrentSession();},[sessionLoading,month,year,loadCurrentSession]);
 
@@ -620,22 +649,13 @@ const autoSave=useCallback(()=>{
   saveTimerRef.current=setTimeout(async()=>{
     const key=sessionKeyRef.current;if(!key)return;
     if(isApproved&&!editUnlocked)return;
-    try{await upsertSession(key,{period:MONTHS[month]+' '+year,month,year,decisions,inv_dec:invDec,manual_entries:manualEntries,checked_bills:serializeCheckedBills(checkedBills),margin_corrections:marginCorrections,excluded_ccs:serializeExcluded(excludedCCs),client_remarks:clientRemarks,finalized,approved:isApproved,approved_at:isApproved?new Date().toISOString():null});}catch(e){console.error('Auto-save failed:',e);}
+    try{const clean=k=>JSON.parse(JSON.stringify(k||{}));await upsertSession(key,{period:MONTHS[month]+' '+year,month,year,decisions:clean(decisions),inv_dec:clean(invDec),manual_entries:clean(manualEntries),checked_bills:serializeCheckedBills(checkedBills),margin_corrections:clean(marginCorrections),excluded_ccs:serializeExcluded(excludedCCs),finalized,approved:isApproved,approved_at:isApproved?new Date().toISOString():null});}catch(e){console.error('Auto-save failed:',e);}
   },1500);
-},[month,year,decisions,invDec,manualEntries,checkedBills,marginCorrections,excludedCCs,clientRemarks,finalized,isApproved,editUnlocked]);
+},[month,year,decisions,invDec,manualEntries,checkedBills,marginCorrections,excludedCCs,finalized,isApproved,editUnlocked]);
 
-useEffect(()=>{if(!sessionLoading)autoSave();},[decisions,invDec,manualEntries,checkedBills,marginCorrections,excludedCCs,clientRemarks,finalized,autoSave,sessionLoading]);
+useEffect(()=>{if(!sessionLoading)autoSave();},[decisions,invDec,manualEntries,checkedBills,marginCorrections,excludedCCs,finalized,autoSave,sessionLoading]);
 
 // Save / approve a month
-const approveMonth=useCallback(async()=>{if(!results||!invRows.length)return;const key=`recon:${year}-${String(month).padStart(2,'0')}`;const closingData={};invRows.forEach(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=src==='manual'?(d?.manualAmt||0):r.closing;closingData[r.cc]={opening:r.opening,purchase:r.finalizedPurchase,sales:r.sales,db:r.db,cogs:r.cogs,closingCalc:r.closing,source:src,finalizedClosing:fin,remarks:d?.remarks||''};});const payload={period:results.period,month,year,approvedAt:new Date().toISOString(),closingData,decisions:{...decisions},invDec:{...invDec}};try{
-  await saveMonth(key,payload);setSavedMonths(p=>({...p,[key]:payload}));
-  setIsApproved(true);setEditUnlocked(false);
-  // Also update session as approved
-  const sKey=sessionKeyRef.current;if(sKey)await upsertSession(sKey,{period:MONTHS[month]+' '+year,month,year,decisions,inv_dec:invDec,manual_entries:manualEntries,checked_bills:serializeCheckedBills(checkedBills),margin_corrections:marginCorrections,excluded_ccs:serializeExcluded(excludedCCs),client_remarks:clientRemarks,finalized:true,approved:true,approved_at:new Date().toISOString(),closing_data:closingData});
-  // Refresh sessions list
-  const sessions=await loadAllSessions();setAllSessions(sessions);
-  addToast(`✓ ${results.period} approved & locked`,'success');
-}catch(e){addToast('Save failed: '+e.message,'error');}},[results,invRows,invDec,decisions,month,year,addToast,manualEntries,checkedBills,marginCorrections,excludedCCs,clientRemarks]);
 
 // Unlock approved month with password
 const unlockApproved=useCallback(()=>{if(pwdInput===EDIT_PASSWORD){setEditUnlocked(true);setShowPasswordPrompt(false);setPwdInput('');addToast('Approved month unlocked for editing','success');}else{addToast('Incorrect password','error');setPwdInput('');};},[pwdInput,addToast]);
@@ -651,7 +671,6 @@ const loadSavedMonth=useCallback((key)=>{const saved=savedMonths[key];if(!saved)
 
 // Sorted saved months list
 const savedMonthsList=useMemo(()=>Object.entries(savedMonths).sort((a,b)=>b[0].localeCompare(a[0])),[savedMonths]);
-const addToast=useCallback((msg,type='info')=>{const id=++toastId.current;setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3500);},[]);
 useEffect(()=>{loadXlsxStyle();},[]);
 const handleFile=useCallback((key,e)=>{const f=e.target.files[0];if(!f)return;setFileNames(p=>({...p,[key]:f.name+' — reading...'}));const reader=new FileReader();reader.onerror=()=>{setFileNames(p=>({...p,[key]:f.name+' — ERROR'}));addToast('Failed','error');};reader.onload=ev=>{try{const wb=window.XLSX.read(new Uint8Array(ev.target.result),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const data=window.XLSX.utils.sheet_to_json(ws,{header:1,defval:null});setFiles(p=>({...p,[key]:data}));setFileNames(p=>({...p,[key]:`✓ ${f.name} · ${data.length} rows`}));addToast(`${f.name} loaded`,'success');}catch(err){setFileNames(p=>({...p,[key]:f.name+' — error'}));addToast(err.message,'error');}};reader.readAsArrayBuffer(f);},[addToast]);
 
@@ -772,6 +791,20 @@ const invRows=useMemo(()=>{if(!results)return[];const{varRows,datevMap,cdhMap,op
 const marginRows=useMemo(()=>{if(!results?.cdhMap)return[];const rows=[];results.cdhMap.forEach((d,cc)=>{if(cc<300000||cc>399999)return;const invSet=new Set();(d.lines||[]).forEach(ln=>invSet.add(ln.invoiceNo));rows.push({cc,netto:d.netto,db:d.db,cogs:d.cogs,marginPct:d.netto?d.db/d.netto*100:0,customer:d.lines?.[0]?.customer||'',invoiceCount:invSet.size});});rows.sort((a,b)=>b.netto-a.netto);return rows;},[results]);
 const mStats=useMemo(()=>{const v=marginRows.filter(r=>Math.abs(r.netto)>100).map(r=>r.marginPct).sort((a,b)=>a-b);const n=v.length;const avg=n?v.reduce((s,x)=>s+x,0)/n:0;const std=n?Math.sqrt(v.reduce((s,x)=>s+(x-avg)**2,0)/n):0;const median=n?n%2===1?v[Math.floor(n/2)]:(v[n/2-1]+v[n/2])/2:0;const spread=Math.abs(median)*0.10;const autoLow=median-spread;const autoHigh=median+spread;return{avg,std,median,autoLow,autoHigh,spread};},[marginRows]);
 
+const approveMonth=useCallback(async()=>{if(!results||!invRows.length)return;const key=`recon:${year}-${String(month).padStart(2,'0')}`;const closingData={};invRows.forEach(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=src==='manual'?(d?.manualAmt||0):r.closing;closingData[r.cc]={opening:r.opening,purchase:r.finalizedPurchase,sales:r.sales,db:r.db,cogs:r.cogs,closingCalc:r.closing,source:src,finalizedClosing:fin,remarks:d?.remarks||''};});
+// Deep-clone decisions to remove undefined values and non-serializable refs
+const cleanDec=JSON.parse(JSON.stringify(decisions||{}));
+const cleanInvDec=JSON.parse(JSON.stringify(invDec||{}));
+const payload={period:results.period,month,year,approvedAt:new Date().toISOString(),closingData,decisions:cleanDec,invDec:cleanInvDec};try{
+  await saveMonth(key,payload);setSavedMonths(p=>({...p,[key]:payload}));
+  setIsApproved(true);setEditUnlocked(false);
+  // Also update session as approved
+  const sKey=sessionKeyRef.current;if(sKey)await upsertSession(sKey,{period:MONTHS[month]+' '+year,month,year,decisions:cleanDec,inv_dec:cleanInvDec,manual_entries:JSON.parse(JSON.stringify(manualEntries||{})),checked_bills:serializeCheckedBills(checkedBills),margin_corrections:JSON.parse(JSON.stringify(marginCorrections||{})),excluded_ccs:serializeExcluded(excludedCCs),finalized:true,approved:true,approved_at:new Date().toISOString(),closing_data:closingData});
+  // Refresh sessions list
+  const sessions=await loadAllSessions();setAllSessions(sessions);
+  addToast(`✓ ${results.period} approved & locked`,'success');
+}catch(e){addToast('Save failed: '+e.message,'error');}},[results,invRows,invDec,decisions,month,year,addToast,manualEntries,checkedBills,marginCorrections,excludedCCs]);
+
 const submitManual=()=>{const val=parseFloat(manualVal)||0;if(manualPopup.type==='var')setDecisions(p=>({...p,[manualPopup.cc]:{...p[manualPopup.cc],source:'manual',manualAmt:val}}));else setInvDec(p=>({...p,[manualPopup.cc]:{...p[manualPopup.cc],source:'manual',manualAmt:val}}));setManualPopup(null);setManualVal('');};
 const doExpVar=()=>{if(!results)return;const period=results.period;const hdr=['Cost Center','Project','Candis Net (€)','DATEV Net (€)','Difference (€)','Diff %','Status','Source','Finalized Purchase (€)','Remarks'];const rows=results.varRows.map(r=>{const dv=results.datevMap.get(r.cc)?.total||0,cv=r.candisNet,dec=decisions[r.cc],fp=getFinPur(r.cc),src=r.status==='Match'?'Match':dec?.source==='candis'?'Candis':dec?.source==='manual'?'Manual':'DATEV';return[r.cc,r.project||'',+cv.toFixed(2),+dv.toFixed(2),+(cv-dv).toFixed(2),r.pct.toFixed(1)+'%',r.status,src,+fp.toFixed(2),dec?.remarks||''];});const tC=results.varRows.reduce((s,r)=>s+r.candisNet,0),tD=results.varRows.reduce((s,r)=>s+r.datevNet,0),tF=results.varRows.reduce((s,r)=>s+getFinPur(r.cc),0);const totalRow=['TOTAL','',+tC.toFixed(2),+tD.toFixed(2),+(tC-tD).toFixed(2),'','','',+tF.toFixed(2),''];exportWorkbook([{name:'Purchase Variance',title:'Purchase Variance Report',period,headers:hdr,dataRows:rows,totalRow,colWidths:[16,28,18,18,18,12,14,14,22,35],opts:{statusCol:6}}],`purchase-variance-${period.replace(' ','-')}.xlsx`);};
 const doExpInv=()=>{if(!invRows.length)return;const period=results?.period||'';const hdr=['Cost Center','Opening Inventory (€)','Finalized Purchase (€)','CDH Sales (€)','Profit Margin (€)','COGS (€)','Source','Finalized Closing (€)','Remarks'];const rows=invRows.map(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=src==='manual'?(d?.manualAmt||0):r.closing;return[r.cc,+r.opening.toFixed(2),+r.finalizedPurchase.toFixed(2),+r.sales.toFixed(2),+r.db.toFixed(2),+r.cogs.toFixed(2),src==='manual'?'Manual':'Calculated',+fin.toFixed(2),d?.remarks||''];});const t=invRows.reduce((a,r)=>({op:a.op+r.opening,fp:a.fp+r.finalizedPurchase,sal:a.sal+r.sales,db:a.db+r.db,cogs:a.cogs+r.cogs,cl:a.cl+r.closing}),{op:0,fp:0,sal:0,db:0,cogs:0,cl:0});const totalRow=['TOTAL',+t.op.toFixed(2),+t.fp.toFixed(2),+t.sal.toFixed(2),+t.db.toFixed(2),+t.cogs.toFixed(2),'',+t.cl.toFixed(2),''];exportWorkbook([{name:'Closing Inventory',title:'Closing Inventory Report',period,headers:hdr,dataRows:rows,totalRow,colWidths:[16,20,20,18,18,18,16,22,35]}],`closing-inventory-${period.replace(' ','-')}.xlsx`);};
@@ -789,7 +822,7 @@ const marSi=key=><span style={{marginLeft:4,fontSize:9,opacity:marginSort.key===
 function sortRows(rows,srt,getVal){if(!srt.key)return rows;return[...rows].sort((a,b)=>{let va=getVal(a,srt.key),vb=getVal(b,srt.key);if(typeof va==='string'&&typeof vb==='string')return srt.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);return srt.dir==='asc'?(va||0)-(vb||0):(vb||0)-(va||0);});}
 const dth={...th,fontSize:10,padding:'6px 10px'};const dthR={...dth,textAlign:'right'};const dtd={...td,fontSize:12,padding:'7px 10px'};const dtdn={...dtd,textAlign:'right',fontVariantNumeric:'tabular-nums'};
 
-return(<div style={{fontFamily:S.font,background:S.g50,color:S.g900,minHeight:'100vh',fontSize:14,lineHeight:1.5}}><style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}table{border-collapse:collapse}tr:hover td{background:${S.g50}}`}</style><Toast toasts={toasts}/>
+return(<div style={{fontFamily:S.font,background:S.g50,color:S.g900,minHeight:'100vh',fontSize:14,lineHeight:1.5}}><style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}table{border-collapse:collapse}tr:hover td{background:${S.g50}}`}</style><Toast toasts={toasts}/>
 {manualPopup&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.4)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setManualPopup(null)}><div style={{background:S.white,borderRadius:S.radiusLg,padding:24,width:340,boxShadow:'0 20px 60px rgba(0,0,0,.2)'}} onClick={e=>e.stopPropagation()}><div style={{fontSize:14,fontWeight:700,marginBottom:4}}>Manual Input — CC {manualPopup.cc}</div><div style={{fontSize:12,color:S.g500,marginBottom:16}}>{manualPopup.type==='var'?'Enter finalized purchase amount':'Enter finalized closing amount'}</div><input type="number" step="0.01" autoFocus style={{...inp,marginBottom:12,fontSize:15,padding:'10px 12px'}} placeholder="0.00" value={manualVal} onChange={e=>setManualVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submitManual()}/><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button style={eb} onClick={()=>setManualPopup(null)}>Cancel</button><button style={{...eb,background:S.brand,color:S.black,fontWeight:700,border:'none'}} onClick={submitManual}>Confirm</button></div></div></div>}
 
 {/* Manual Purchase Entry Modal */}
@@ -846,7 +879,7 @@ return(<div style={{fontFamily:S.font,background:S.g50,color:S.g900,minHeight:'1
 <span style={{fontSize:12,padding:'4px 12px',borderRadius:20,border:`1px solid ${results?S.brandDark:S.g200}`,color:results?S.success:S.g500,fontFamily:S.mono,background:results?S.successBg:S.g50}}>{results?'✓ Data Loaded':'No Data'}</span>
 <span style={{fontSize:10,color:S.g300}}>auto-saving</span>
 {results&&<button onClick={()=>{setResults(null);setFinalized(false);addToast('Cleared data — session decisions preserved','info');}} style={{fontSize:12,padding:'5px 12px',border:`1px solid ${S.g200}`,borderRadius:6,background:'transparent',color:S.g500,cursor:'pointer'}}>Clear Data</button>}{results&&<button style={{...eb,fontWeight:600,borderColor:S.brandDark,color:S.success}} onClick={doExpAll}>⬇ Export Full</button>}</div></div>
-<div style={{maxWidth:1600,margin:'0 auto',padding:'24px 16px'}}>{/* TABS */}<div style={{display:'flex',gap:2,marginBottom:20,borderBottom:`2px solid ${S.g200}`}}>{[['upload','Upload'],['variance','Purchase Variance'],['inventory','Closing Inventory'],['margin','Profit Margin Analysis'],['mapping','Account Mapping'],['remarks','Client Remarks']].map(([k,l])=>{const dis=(k==='inventory'||k==='margin')&&!finalized;return <button key={k} style={{padding:'10px 18px',fontSize:13,fontWeight:tab===k?600:500,cursor:dis?'default':'pointer',color:tab===k?S.black:S.g500,background:'none',border:'none',borderBottom:`2px solid ${tab===k?S.brandDark:'transparent'}`,marginBottom:-2,whiteSpace:'nowrap',opacity:dis?.4:1}} onClick={()=>!dis&&setTab(k)}>{l}</button>;})}</div>
+<div style={{maxWidth:1600,margin:'0 auto',padding:'24px 16px'}}>{/* TABS */}<div style={{display:'flex',gap:2,marginBottom:20,borderBottom:`2px solid ${S.g200}`}}>{[['upload','Upload'],['variance','Purchase Variance'],['inventory','Closing Inventory'],['margin','Profit Margin Analysis'],['mapping','Account Mapping'],['remarks','Client Remarks'],['closed','Closed Months']].map(([k,l])=>{const dis=(k==='inventory'||k==='margin')&&!finalized;return <button key={k} style={{padding:'10px 18px',fontSize:13,fontWeight:tab===k?600:500,cursor:dis?'default':'pointer',color:tab===k?S.black:k==='closed'?'#7c3aed':S.g500,background:'none',border:'none',borderBottom:`2px solid ${tab===k?S.brandDark:'transparent'}`,marginBottom:-2,whiteSpace:'nowrap',opacity:dis?.4:1}} onClick={()=>!dis&&setTab(k)}>{l}</button>;})}</div>
 {/* UPLOAD */}{tab==='upload'&&<div style={{animation:'fadeIn .2s ease',maxWidth:1200,margin:'0 auto'}}><div style={{display:'flex',gap:10,alignItems:'center',marginBottom:16,flexWrap:'wrap'}}><label style={{fontSize:12,fontWeight:600,color:S.g500,textTransform:'uppercase',letterSpacing:.5}}>Period:</label><select style={sel} value={month} onChange={e=>setMonth(+e.target.value)}>{MONTHS.slice(1).map((m,i)=><option key={i+1} value={i+1}>{m}</option>)}</select><select style={sel} value={year} onChange={e=>setYear(+e.target.value)}>{[2023,2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}</select></div>
 {/* Folder auto-detect upload */}
 <div style={{background:S.white,border:`2px dashed ${S.brandDark}`,borderRadius:S.radiusLg,padding:'20px 24px',marginBottom:14,textAlign:'center',cursor:'pointer',position:'relative'}} onClick={()=>folderRef.current?.click()}>
@@ -886,31 +919,17 @@ return(<div style={{fontFamily:S.font,background:S.g50,color:S.g900,minHeight:'1
 </div>
 </div>
 <button style={{width:'100%',padding:13,fontSize:14,fontWeight:700,background:allLoaded?S.brand:S.g200,color:allLoaded?S.black:S.g500,border:'none',borderRadius:S.radius,cursor:allLoaded?'pointer':'default',opacity:allLoaded?1:.4}} onClick={runRecon} disabled={!allLoaded}>▶ {allLoaded?'Run Reconciliation':'Upload all 4 files'}</button>
-{/* ACTIVE SESSIONS */}
-{allSessions.length>0&&<div style={{marginTop:20}}>
-<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}><div style={{width:8,height:8,borderRadius:'50%',background:'#7c3aed'}}/><span style={{fontSize:14,fontWeight:700}}>Active Sessions</span><span style={{fontSize:11,color:S.g500}}>({allSessions.length})</span></div>
+{/* IN-PROGRESS SESSIONS */}
+{(()=>{const wip=allSessions.filter(s=>!s.approved);return wip.length>0?<div style={{marginTop:20}}>
+<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}><div style={{width:8,height:8,borderRadius:'50%',background:'#7c3aed'}}/><span style={{fontSize:14,fontWeight:700}}>Continue Working</span><span style={{fontSize:11,color:S.g500}}>({wip.length} in progress)</span></div>
 <div style={card}><div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={th}>Period</th><th style={th}>Status</th><th style={th}>Last Updated</th><th style={th}></th></tr></thead>
-<tbody>{allSessions.sort((a,b)=>`${b.year}-${String(b.month).padStart(2,'0')}`.localeCompare(`${a.year}-${String(a.month).padStart(2,'0')}`)).map(s=>{const isCurrent=s.month===month&&s.year===year;return <tr key={s.id} style={{background:isCurrent?'#f7fce8':undefined}}>
+<tbody>{wip.sort((a,b)=>`${b.year}-${String(b.month).padStart(2,'0')}`.localeCompare(`${a.year}-${String(a.month).padStart(2,'0')}`)).map(s=>{const isCurrent=s.month===month&&s.year===year;return <tr key={s.id} style={{background:isCurrent?'#f7fce8':undefined}}>
 <td style={{...td,fontWeight:600}}>{s.period}</td>
-<td style={td}>{s.approved?<span style={{fontSize:11,padding:'2px 8px',borderRadius:12,fontWeight:600,background:S.successBg,color:S.success}}>✓ Approved</span>:s.finalized?<span style={{fontSize:11,padding:'2px 8px',borderRadius:12,fontWeight:600,background:S.warnBg,color:S.warn}}>Finalized</span>:<span style={{fontSize:11,padding:'2px 8px',borderRadius:12,fontWeight:600,background:S.infoBg,color:S.info}}>In Progress</span>}</td>
+<td style={td}>{s.finalized?<span style={{fontSize:11,padding:'2px 8px',borderRadius:12,fontWeight:600,background:S.warnBg,color:S.warn}}>Finalized</span>:<span style={{fontSize:11,padding:'2px 8px',borderRadius:12,fontWeight:600,background:S.infoBg,color:S.info}}>In Progress</span>}</td>
 <td style={{...td,fontSize:11,color:S.g500}}>{new Date(s.updated_at).toLocaleDateString('en-GB')} {new Date(s.updated_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</td>
-<td style={{...td,textAlign:'right'}}>{!isCurrent&&<button onClick={()=>{setMonth(s.month);setYear(s.year);addToast(`Switched to ${s.period}`,'info');}} style={{padding:'4px 10px',fontSize:11,fontWeight:600,background:'#f3e8ff',color:'#7c3aed',border:'1px solid #d8b4fe',borderRadius:4,cursor:'pointer'}}>↻ Continue</button>}{isCurrent&&<span style={{fontSize:11,color:S.brandDark,fontWeight:600}}>● Current</span>}</td>
+<td style={{...td,textAlign:'right'}}>{!isCurrent?<button onClick={()=>{setMonth(s.month);setYear(s.year);addToast(`Switched to ${s.period}`,'info');}} style={{padding:'4px 12px',fontSize:11,fontWeight:600,background:'#f3e8ff',color:'#7c3aed',border:'1px solid #d8b4fe',borderRadius:4,cursor:'pointer'}}>↻ Continue</button>:<span style={{fontSize:11,color:S.brandDark,fontWeight:600}}>● Current</span>}</td>
 </tr>;})}</tbody></table></div></div>
-</div>}
-{/* SAVED MONTHS LOG */}
-{savedMonthsList.length>0&&<div style={{marginTop:20}}>
-<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}><div style={{width:8,height:8,borderRadius:'50%',background:S.info}}/><span style={{fontSize:14,fontWeight:700}}>Saved Months</span><span style={{fontSize:11,color:S.g500}}>({savedMonthsList.length})</span></div>
-<div style={card}><div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={th}>Period</th><th style={th}>Approved</th><th style={thR}>Cost Centers</th><th style={thR}>Total Closing</th><th style={th}></th></tr></thead>
-<tbody>{savedMonthsList.map(([k,v])=>{const ccCount=Object.keys(v.closingData||{}).length;const totalClosing=Object.values(v.closingData||{}).reduce((s,d)=>s+(d.finalizedClosing||0),0);return <tr key={k}>
-<td style={{...td,fontWeight:600}}>{v.period}</td>
-<td style={{...td,fontSize:11,color:S.g500}}>{new Date(v.approvedAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} {new Date(v.approvedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</td>
-<td style={tdn}>{ccCount}</td>
-<td style={{...tdn,fontWeight:600,color:totalClosing>=0?S.success:S.danger}}>{fmt(totalClosing)}</td>
-<td style={{...td,display:'flex',gap:6,justifyContent:'flex-end'}}>
-<button onClick={()=>loadSavedMonth(k)} style={{padding:'4px 10px',fontSize:11,fontWeight:600,background:S.infoBg,color:S.info,border:`1px solid #c0d8f5`,borderRadius:4,cursor:'pointer'}}>↻ Revisit</button>
-<button onClick={()=>{if(confirm(`Delete ${v.period}?`))deleteSavedMonth2(k);}} style={{padding:'4px 10px',fontSize:11,fontWeight:600,background:S.dangerBg,color:S.danger,border:`1px solid #f5c0bb`,borderRadius:4,cursor:'pointer'}}>✕</button>
-</td></tr>;})}</tbody></table></div></div>
-</div>}
+</div>:null;})()}
 </div>}
 {/* VARIANCE */}{tab==='variance'&&<div style={{animation:'fadeIn .2s ease'}}>{!results?<Empty icon="⚖" text="Upload and run reconciliation."/>:(()=>{const vr=results.varRows,mN=vr.filter(r=>r.status==='Match').length,vN=vr.filter(r=>r.status==='Variance').length,tC=vr.reduce((s,r)=>s+r.candisNet,0),tD=vr.reduce((s,r)=>s+r.datevNet,0),tF=vr.reduce((s,r)=>s+getFinPur(r.cc),0);let fil=vr.filter(r=>{if(varFilter&&r.status!==varFilter)return false;if(varSearch&&!String(r.cc).includes(varSearch)&&!(r.project||'').toLowerCase().includes(varSearch.toLowerCase()))return false;return true;});if(varSort.key){fil=[...fil].sort((a,b)=>{let va,vb;const k=varSort.key;if(k==='cc'){va=a.cc;vb=b.cc;}else if(k==='project'){va=a.project||'';vb=b.project||'';}else if(k==='candisNet'){va=a.candisNet;vb=b.candisNet;}else if(k==='datevNet'){va=a.datevNet;vb=b.datevNet;}else if(k==='diff'){va=a.diff;vb=b.diff;}else if(k==='pct'){va=a.pct;vb=b.pct;}else if(k==='bills'){const dDA=results.datevMap.get(a.cc),dDB=results.datevMap.get(b.cc);const sA=new Set();(dDA?.entries||[]).forEach(e=>sA.add(e.belegfeld));const sB=new Set();(dDB?.entries||[]).forEach(e=>sB.add(e.belegfeld));va=sA.size;vb=sB.size;}else if(k==='manualNet'){va=getManualTotal(a.cc);vb=getManualTotal(b.cc);}else if(k==='status'){const o={Match:0,Minor:1,Variance:2};va=o[a.status]||3;vb=o[b.status]||3;}else if(k==='finalized'){va=getFinPur(a.cc);vb=getFinPur(b.cc);}else{va=0;vb=0;}if(typeof va==='string')return varSort.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);return varSort.dir==='asc'?va-vb:vb-va;});}
 return <><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Purchase Variance · {results.period}</h2></div><div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap'}}><Metric label="Cost Centers" value={vr.length} accent={S.brand}/><Metric label="Matched" value={mN} accent="#1a7a4a" cls="success"/><Metric label="Variances" value={vN} accent={vN?'#c0392b':'#1a7a4a'} cls={vN?'danger':'success'}/><Metric label="Finalized Purchase" value={fmt(tF)} accent="#1a5fa8" cls="info"/></div>
@@ -933,8 +952,8 @@ isE&&<tr key={r.cc+'-d'}><td colSpan={12} style={{padding:'0 14px 14px',borderTo
 </td></tr>];})}</tbody>
 <tfoot><tr style={{background:S.g50,borderTop:`2px solid ${S.g200}`,fontWeight:700}}><td style={td}></td><td colSpan={2} style={td}>TOTAL</td><td style={tdn}></td><td style={tdn}>{fmt(tC)}</td><td style={tdn}>{fmt(tD)}</td><td style={{...tdn,color:'#7c3aed'}}>{fmt(Object.values(manualEntries).reduce((s,arr)=>s+arr.reduce((a,e)=>a+e.net,0),0))}</td><td style={{...tdn,color:Math.abs(tC-tD)>1?S.danger:undefined}}>{fmt(tC-tD)}</td><td style={tdn}>—</td><td style={td}></td><td style={{...tdn,fontWeight:700}}>{fmt(tF)}</td><td style={td}></td></tr></tfoot></table></div>
 <div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`,flexWrap:'wrap'}}><button style={eb} onClick={doExpVar}>⬇ Export Variance</button><button style={{...eb,background:'#f3e8ff',color:'#7c3aed',borderColor:'#d8b4fe'}} onClick={()=>{setShowManualPurchase(true);setMpForm(p=>({...p,cc:''}))}}>＋ Add Manual Entry</button><button style={{...eb,background:S.brand,color:S.black,fontWeight:700,border:'none'}} onClick={()=>{setFinalized(true);addToast('Purchases finalized','success');setTab('inventory');}}>✓ Finalize Purchases</button></div></div></>;})()}</div>}
-{/* INVENTORY */}{tab==='inventory'&&<div style={{animation:'fadeIn .2s ease'}}>{!finalized?<Empty icon="📦" text="Finalize purchases first."/>:(()=>{const activeRows=invRows.filter(r=>!excludedCCs.has(r.cc));const t=activeRows.reduce((a,r)=>({op:a.op+r.opening,fp:a.fp+r.finalizedPurchase,sal:a.sal+r.sales,cogs:a.cogs+r.cogs,cl:a.cl+r.closing,db:a.db+r.db}),{op:0,fp:0,sal:0,cogs:0,cl:0,db:0});return <><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Closing Inventory · {results.period}</h2>{excludedCCs.size>0&&<span style={{fontSize:11,color:S.warn,background:S.warnBg,padding:'2px 10px',borderRadius:12,fontWeight:600}}>{excludedCCs.size} excluded</span>}</div><div style={{background:S.infoBg,border:'1px solid #c0d8f5',borderRadius:S.radius,padding:'10px 14px',fontSize:12,color:S.info,marginBottom:16,fontFamily:S.mono}}>Closing = Opening + Purchase − COGS (excluded CCs not counted in totals)</div><div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap'}}><Metric label="Opening" value={fmt(t.op)} accent="#1a5fa8" cls="info"/><Metric label="Purchase" value={fmt(t.fp)} accent={S.brandDark}/><Metric label="− COGS" value={fmt(t.cogs)} accent="#c0392b" cls="danger"/><Metric label="= Closing" value={fmt(t.cl)} accent={t.cl>=0?'#1a7a4a':'#c0392b'} cls={t.cl>=0?'success':'danger'}/></div>
-<div style={card}><div style={{padding:'12px 16px',borderBottom:`1px solid ${S.g100}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>By Cost Center</span><input style={{...inp,width:170}} placeholder="Search CC..." value={invSearch} onChange={e=>setInvSearch(e.target.value)}/></div><div style={{overflowX:'auto'}}>{(()=>{let fil=invRows.filter(r=>!invSearch||String(r.cc).includes(invSearch));fil=sortRows(fil,invSort,(r,k)=>k==='cc'?r.cc:k==='opening'?r.opening:k==='purchase'?r.finalizedPurchase:k==='sales'?r.sales:k==='db'?r.db:k==='cogs'?r.cogs:k==='closing'?r.closing:k==='finalized'?(()=>{const d=invDec[r.cc],src=d?.source||'calculated';return src==='manual'?(d?.manualAmt||0):r.closing;})():0);return <table style={{width:'100%'}}><thead><tr><th style={{...th,width:36}}>Incl.</th><th style={sth} onClick={()=>invTs('cc')}>CC{invSi('cc')}</th><th style={sthR} onClick={()=>invTs('opening')}>Opening{invSi('opening')}</th><th style={sthR} onClick={()=>invTs('purchase')}>Purchase{invSi('purchase')}</th><th style={sthR} onClick={()=>invTs('sales')}>Sales{invSi('sales')}</th><th style={sthR} onClick={()=>invTs('db')}>Profit Margin{invSi('db')}</th><th style={sthR} onClick={()=>invTs('cogs')}>COGS{invSi('cogs')}</th><th style={sthR} onClick={()=>invTs('closing')}>Closing (Calc){invSi('closing')}</th><th style={th}>Source</th><th style={sthR} onClick={()=>invTs('finalized')}>Finalized{invSi('finalized')}</th><th style={th}>Remarks</th><th style={th}>Client Remarks</th></tr></thead><tbody>{fil.map(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=src==='manual'?(d?.manualAmt||0):r.closing;const excl=excludedCCs.has(r.cc);const cr=getClientRemark(r.cc);return <tr key={r.cc} style={{opacity:excl?.45:1,background:excl?'#fef2f2':undefined}}><td style={{...td,textAlign:'center'}}><input type="checkbox" checked={!excl} onChange={()=>setExcludedCCs(p=>{const n=new Set(p);if(n.has(r.cc))n.delete(r.cc);else n.add(r.cc);return n;})} style={{cursor:'pointer'}} title={excl?'Click to include':'Click to exclude'}/></td><td style={td}><CCChip cc={r.cc} idx={r.colorIdx}/></td><td style={tdn}>{fmt(r.opening)}</td><td style={tdn}>{fmt(r.finalizedPurchase)}</td><td style={tdn}>{r.sales?fmt(r.sales):'—'}</td><td style={{...tdn,color:S.success}}>{r.db?fmt(r.db):'—'}</td><td style={{...tdn,color:S.danger}}>{r.cogs?fmt(r.cogs):'—'}</td><td style={tdn}>{fmt(r.closing)}</td><td style={td}><select style={{padding:'3px 6px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:12,background:S.white,cursor:'pointer'}} value={src} onChange={e=>{if(e.target.value==='manual'){setManualPopup({cc:r.cc,type:'inv'});setManualVal(d?.manualAmt?.toString()||'');}else setInvDec(p=>({...p,[r.cc]:{...p[r.cc],source:e.target.value}}));}}><option value="calculated">Calculated</option><option value="manual">Manual Input</option></select></td><td style={{...tdn,fontWeight:600,color:excl?S.g300:fin<0?S.danger:S.success}}>{excl?<s>{fmt(fin)}</s>:fmt(fin)}</td><td style={td}><input type="text" placeholder="Remarks..." style={{width:100,padding:'3px 6px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:11,background:S.white}} value={d?.remarks||''} onChange={e=>setInvDec(p=>({...p,[r.cc]:{...p[r.cc],remarks:e.target.value}}))}/></td><td style={{...td,fontSize:11,color:S.g500,maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={cr?.remarks||''}>{cr?.remarks||'—'}</td></tr>;})}</tbody><tfoot><tr style={{background:S.g50,borderTop:`2px solid ${S.g200}`,fontWeight:700}}><td style={td}></td><td style={td}>TOTAL</td><td style={tdn}>{fmt(t.op)}</td><td style={tdn}>{fmt(t.fp)}</td><td style={tdn}>{fmt(t.sal)}</td><td style={{...tdn,color:S.success}}>{fmt(t.db)}</td><td style={{...tdn,color:S.danger}}>{fmt(t.cogs)}</td><td style={tdn}>{fmt(t.cl)}</td><td style={td}></td><td style={{...tdn,fontWeight:700}}>{fmt(t.cl)}</td><td style={td}></td><td style={td}></td></tr></tfoot></table>;})()}</div><div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`,flexWrap:'wrap'}}><button style={eb} onClick={doExpInv}>⬇ Export Inventory</button><button style={{...eb,background:S.brand,color:S.black,fontWeight:700,border:'none'}} onClick={approveMonth}>✓ Approve & Save Month</button>{savedMonths[`recon:${year}-${String(month).padStart(2,'0')}`]&&<span style={{fontSize:11,color:S.success,alignSelf:'center'}}>✓ Saved {new Date(savedMonths[`recon:${year}-${String(month).padStart(2,'0')}`].approvedAt).toLocaleDateString('en-GB')}</span>}</div></div></>;})()}</div>}
+{/* INVENTORY */}{tab==='inventory'&&<div style={{animation:'fadeIn .2s ease'}}>{!finalized?<Empty icon="📦" text="Finalize purchases first."/>:(()=>{const getFin=r=>{const d=invDec[r.cc],src=d?.source||'calculated';return src==='manual'?(d?.manualAmt||0):r.closing;};const activeRows=invRows.filter(r=>!excludedCCs.has(r.cc));const t=activeRows.reduce((a,r)=>({op:a.op+r.opening,fp:a.fp+r.finalizedPurchase,sal:a.sal+r.sales,cogs:a.cogs+r.cogs,cl:a.cl+getFin(r),db:a.db+r.db}),{op:0,fp:0,sal:0,cogs:0,cl:0,db:0});return <><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Closing Inventory · {results.period}</h2>{excludedCCs.size>0&&<span style={{fontSize:11,color:S.warn,background:S.warnBg,padding:'2px 10px',borderRadius:12,fontWeight:600}}>{excludedCCs.size} excluded</span>}</div><div style={{background:S.infoBg,border:'1px solid #c0d8f5',borderRadius:S.radius,padding:'10px 14px',fontSize:12,color:S.info,marginBottom:16,fontFamily:S.mono}}>Closing = Opening + Purchase − COGS (excluded CCs not counted in totals)</div><div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap'}}><Metric label="Opening" value={fmt(t.op)} accent="#1a5fa8" cls="info"/><Metric label="Purchase" value={fmt(t.fp)} accent={S.brandDark}/><Metric label="− COGS" value={fmt(t.cogs)} accent="#c0392b" cls="danger"/><Metric label="= Finalized Closing" value={fmt(t.cl)} accent={t.cl>=0?'#1a7a4a':'#c0392b'} cls={t.cl>=0?'success':'danger'}/></div>
+<div style={card}><div style={{padding:'12px 16px',borderBottom:`1px solid ${S.g100}`,display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}><span style={{fontSize:12,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>By Cost Center</span><div style={{display:'flex',gap:8}}><input style={{...inp,width:140}} placeholder="Search CC..." value={invSearch} onChange={e=>setInvSearch(e.target.value)}/><input style={{...inp,width:180}} placeholder="Filter client remarks..." value={invRemarkFilter} onChange={e=>setInvRemarkFilter(e.target.value)}/></div></div><div style={{overflowX:'auto'}}>{(()=>{let fil=invRows.filter(r=>{if(invSearch&&!String(r.cc).includes(invSearch))return false;if(invRemarkFilter){const cr=getClientRemark(r.cc);if(!cr)return false;if(!String(cr.remarks||'').toLowerCase().includes(invRemarkFilter.toLowerCase()))return false;}return true;});fil=sortRows(fil,invSort,(r,k)=>k==='cc'?r.cc:k==='opening'?r.opening:k==='purchase'?r.finalizedPurchase:k==='sales'?r.sales:k==='db'?r.db:k==='cogs'?r.cogs:k==='closing'?r.closing:k==='finalized'?getFin(r):0);return <table style={{width:'100%'}}><thead><tr><th style={{...th,width:36}}>Incl.</th><th style={sth} onClick={()=>invTs('cc')}>CC{invSi('cc')}</th><th style={sthR} onClick={()=>invTs('opening')}>Opening{invSi('opening')}</th><th style={sthR} onClick={()=>invTs('purchase')}>Purchase{invSi('purchase')}</th><th style={sthR} onClick={()=>invTs('sales')}>Sales{invSi('sales')}</th><th style={sthR} onClick={()=>invTs('db')}>Profit Margin{invSi('db')}</th><th style={sthR} onClick={()=>invTs('cogs')}>COGS{invSi('cogs')}</th><th style={sthR} onClick={()=>invTs('closing')}>Closing (Calc){invSi('closing')}</th><th style={th}>Source</th><th style={sthR} onClick={()=>invTs('finalized')}>Finalized{invSi('finalized')}</th><th style={th}>Remarks</th><th style={th}>Client Remarks</th></tr></thead><tbody>{fil.map(r=>{const d=invDec[r.cc],src=d?.source||'calculated',fin=getFin(r);const excl=excludedCCs.has(r.cc);const cr=getClientRemark(r.cc);return <tr key={r.cc} style={{opacity:excl?.45:1,background:excl?'#fef2f2':undefined}}><td style={{...td,textAlign:'center'}}><input type="checkbox" checked={!excl} onChange={()=>setExcludedCCs(p=>{const n=new Set(p);if(n.has(r.cc))n.delete(r.cc);else n.add(r.cc);return n;})} style={{cursor:'pointer'}} title={excl?'Click to include':'Click to exclude'}/></td><td style={td}><CCChip cc={r.cc} idx={r.colorIdx}/></td><td style={tdn}>{fmt(r.opening)}</td><td style={tdn}>{fmt(r.finalizedPurchase)}</td><td style={tdn}>{r.sales?fmt(r.sales):'—'}</td><td style={{...tdn,color:S.success}}>{r.db?fmt(r.db):'—'}</td><td style={{...tdn,color:S.danger}}>{r.cogs?fmt(r.cogs):'—'}</td><td style={tdn}>{fmt(r.closing)}</td><td style={td}><select style={{padding:'3px 6px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:12,background:S.white,cursor:'pointer'}} value={src} onChange={e=>{if(e.target.value==='manual'){setManualPopup({cc:r.cc,type:'inv'});setManualVal(d?.manualAmt?.toString()||'');}else setInvDec(p=>({...p,[r.cc]:{...p[r.cc],source:e.target.value}}));}}><option value="calculated">Calculated</option><option value="manual">Manual Input</option></select></td><td style={{...tdn,fontWeight:600,color:excl?S.g300:fin<0?S.danger:S.success}}>{excl?<s>{fmt(fin)}</s>:fmt(fin)}</td><td style={td}><input type="text" placeholder="Remarks..." style={{width:100,padding:'3px 6px',border:`1px solid ${S.g200}`,borderRadius:4,fontSize:11,background:S.white}} value={d?.remarks||''} onChange={e=>setInvDec(p=>({...p,[r.cc]:{...p[r.cc],remarks:e.target.value}}))}/></td><td style={{...td,fontSize:11,color:S.g500,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={cr?.remarks||''}>{cr?.remarks||'—'}</td></tr>;})}</tbody><tfoot><tr style={{background:S.g50,borderTop:`2px solid ${S.g200}`,fontWeight:700}}><td style={td}></td><td style={td}>TOTAL</td><td style={tdn}>{fmt(t.op)}</td><td style={tdn}>{fmt(t.fp)}</td><td style={tdn}>{fmt(t.sal)}</td><td style={{...tdn,color:S.success}}>{fmt(t.db)}</td><td style={{...tdn,color:S.danger}}>{fmt(t.cogs)}</td><td style={tdn}>{fmt(activeRows.reduce((s,r)=>s+r.closing,0))}</td><td style={td}></td><td style={{...tdn,fontWeight:700}}>{fmt(t.cl)}</td><td style={td}></td><td style={td}></td></tr></tfoot></table>;})()}</div><div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`,flexWrap:'wrap'}}><button style={eb} onClick={doExpInv}>⬇ Export Inventory</button><button style={{...eb,background:S.brand,color:S.black,fontWeight:700,border:'none'}} onClick={approveMonth}>✓ Approve & Save Month</button>{savedMonths[`recon:${year}-${String(month).padStart(2,'0')}`]&&<span style={{fontSize:11,color:S.success,alignSelf:'center'}}>✓ Saved {new Date(savedMonths[`recon:${year}-${String(month).padStart(2,'0')}`].approvedAt).toLocaleDateString('en-GB')}</span>}</div></div></>;})()}</div>}
 {/* MARGIN */}{tab==='margin'&&<div style={{animation:'fadeIn .2s ease'}}>{!finalized?<Empty icon="📊" text="Finalize purchases first."/>:!marginRows.length?<Empty icon="📊" text="No CDH data."/>:(()=>{const{avg,median,autoLow,autoHigh,spread}=mStats;const lo=mrgMode==='manual'?(parseFloat(mrgMin)||0):autoLow;const hi=mrgMode==='manual'?(parseFloat(mrgMax)||100):autoHigh;const refVal=mrgMode==='manual'?(lo+hi)/2:median;const tN=marginRows.reduce((s,r)=>s+r.netto,0),tDB=marginRows.reduce((s,r)=>s+r.db,0),ov=tN?tDB/tN*100:0;const flagCC=r=>{if(Math.abs(r.netto)<=100)return{c:'',l:'Low vol.'};if(r.marginPct>hi)return{c:'high',l:'▲ High'};if(r.marginPct<lo)return{c:'low',l:'▼ Low'};return{c:'ok',l:'Normal'};};const fH=marginRows.filter(r=>Math.abs(r.netto)>100&&r.marginPct>hi).length,fL=marginRows.filter(r=>Math.abs(r.netto)>100&&r.marginPct<lo).length;const mx=Math.max(...marginRows.map(r=>Math.abs(r.marginPct)),1);const fil=marginRows.filter(r=>{const f=flagCC(r);if(marginFilter&&f.c!==marginFilter)return false;if(marginSearch&&!String(r.cc).includes(marginSearch))return false;return true;});
 return <><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Profit Margin — {results.period}</h2></div><div style={{display:'flex',gap:10,marginBottom:18,flexWrap:'wrap'}}><Metric label="Net Sales" value={fmt(tN)} accent={S.brandDark}/><Metric label="Profit Margin" value={fmt(tDB)} accent="#1a7a4a" cls="success"/><Metric label={mrgMode==='auto'?'Median %':'Avg %'} value={(mrgMode==='auto'?median:avg).toFixed(1)+'%'} accent="#1a5fa8" cls="info"/><Metric label="Flagged" value={fH+fL} accent={(fH+fL)>0?'#c0392b':'#1a7a4a'} cls={(fH+fL)>0?'danger':'success'}/></div>
 {/* Threshold controls */}
@@ -994,28 +1013,60 @@ isExp&&<tr key={r.cc+'-d'}><td colSpan={12} style={{padding:'0 14px 14px',border
 </div></td></tr>];});})()}</tbody></table></div><div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`}}><button style={eb} onClick={doExpMar}>⬇ Export Margin</button></div></div></>;})()}</div>}
 {/* MAPPING */}{tab==='mapping'&&<div style={{animation:'fadeIn .2s ease'}}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:S.brand}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Account Mapping</h2></div><div style={{background:S.white,border:`1px solid ${S.g200}`,borderRadius:S.radiusLg,padding:16,marginBottom:14,display:'grid',gridTemplateColumns:'120px 180px 1fr 1fr auto',gap:10,alignItems:'end'}}><div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>Code</label><input style={inp} type="number" placeholder="e.g. 3400" value={mfCode} onChange={e=>setMfCode(e.target.value)}/></div><div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>Category</label><select style={inp} value={mfCat} onChange={e=>setMfCat(e.target.value)}><option value="EXPENSES [COGS]">EXPENSES [COGS]</option><option value="EXPENSES [OTHER]">EXPENSES [OTHER]</option></select></div><div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>German</label><input style={inp} placeholder="German desc." value={mfDe} onChange={e=>setMfDe(e.target.value)}/></div><div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>English</label><input style={inp} placeholder="English desc." value={mfEn} onChange={e=>setMfEn(e.target.value)}/></div><button style={{padding:'8px 18px',fontSize:13,fontWeight:700,background:S.brand,color:S.black,border:'none',borderRadius:6,cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>{const c=parseInt(mfCode,10);if(!c||isNaN(c)){addToast('Enter valid code','error');return;}if(mapping.find(m=>m.accCode===c)){addToast(`${c} exists`,'error');return;}setMapping(p=>[...p,{accCode:c,category:mfCat,descDe:mfDe.trim(),descEn:mfEn.trim()}]);setMfCode('');setMfDe('');setMfEn('');addToast(`Added ${c}`,'success');}}>+ Add</button></div>
 <div style={card}><div style={{padding:'12px 16px',borderBottom:`1px solid ${S.g100}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>Codes ({mapping.length})</span><input style={{...inp,width:200}} placeholder="Search..." value={mapSearch} onChange={e=>setMapSearch(e.target.value)}/></div><div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={th}>Code</th><th style={th}>Category</th><th style={th}>German</th><th style={th}>English</th><th style={{...th,width:40}}></th></tr></thead><tbody>{mapping.filter(m=>!mapSearch||String(m.accCode).includes(mapSearch)||m.descEn.toLowerCase().includes(mapSearch.toLowerCase())||m.descDe.toLowerCase().includes(mapSearch.toLowerCase())).sort((a,b)=>a.accCode-b.accCode).map(m=><tr key={m.accCode}><td style={{...td,fontWeight:600,fontFamily:S.mono,fontSize:13}}>{m.accCode}</td><td style={td}><CatBadge cat={m.category}/></td><td style={{...td,fontSize:12,color:S.g700}}>{m.descDe||'—'}</td><td style={{...td,fontSize:12}}>{m.descEn||'—'}</td><td style={td}><button onClick={()=>setMapping(p=>p.filter(x=>x.accCode!==m.accCode))} style={{background:'transparent',border:'none',color:S.g300,cursor:'pointer',fontSize:14,padding:'4px 8px',borderRadius:4}}>✕</button></td></tr>)}</tbody></table></div><div style={{display:'flex',gap:8,padding:'10px 16px',borderTop:`1px solid ${S.g100}`}}><button style={eb} onClick={()=>{const wb=window.XLSX.utils.book_new();window.XLSX.utils.book_append_sheet(wb,window.XLSX.utils.json_to_sheet(mapping.map(m=>({'CODE':m.accCode,CATEGORY:m.category,GERMAN:m.descDe,ENGLISH:m.descEn}))),'Mapping');window.XLSX.writeFile(wb,'account_mapping.xlsx');}}>⬇ Export Mapping</button></div></div></div>}
-{/* CLIENT REMARKS */}{tab==='remarks'&&<div style={{animation:'fadeIn .2s ease'}}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:'#92640a'}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Client's Past Remarks</h2></div>
+{/* CLIENT REMARKS */}{tab==='remarks'&&<div style={{animation:'fadeIn .2s ease'}}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:'#92640a'}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Client's Past Remarks</h2><span style={{fontSize:11,padding:'3px 10px',borderRadius:12,background:S.successBg,color:S.success,fontWeight:600}}>☁ Saved to cloud · {clientRemarks.length} total</span></div>
 {/* Add form */}
 <div style={{background:S.white,border:`1px solid ${S.g200}`,borderRadius:S.radiusLg,padding:16,marginBottom:14,display:'grid',gridTemplateColumns:'140px 1fr 2fr auto',gap:10,alignItems:'end'}}>
 <div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>Cost Center</label><input style={inp} type="number" placeholder="e.g. 375000" value={remarkForm.cc} onChange={e=>setRemarkForm(p=>({...p,cc:e.target.value}))}/></div>
 <div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>Project Name</label><input style={inp} placeholder="Project name" value={remarkForm.project} onChange={e=>setRemarkForm(p=>({...p,project:e.target.value}))}/></div>
 <div><label style={{fontSize:11,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase',display:'block',marginBottom:4}}>Remarks</label><input style={inp} placeholder="Client remarks..." value={remarkForm.remarks} onChange={e=>setRemarkForm(p=>({...p,remarks:e.target.value}))}/></div>
-<button style={{padding:'8px 18px',fontSize:13,fontWeight:700,background:'#92640a',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>{const cc=parseInt(remarkForm.cc,10);if(!cc||isNaN(cc)){addToast('Enter valid CC','error');return;}if(!remarkForm.remarks.trim()){addToast('Enter remarks','error');return;}setClientRemarks(p=>{const idx=p.findIndex(r=>r.cc===cc);if(idx>=0){const n=[...p];n[idx]={cc,project:remarkForm.project.trim(),remarks:remarkForm.remarks.trim()};return n;}return[...p,{cc,project:remarkForm.project.trim(),remarks:remarkForm.remarks.trim()}];});setRemarkForm({cc:'',project:'',remarks:''});addToast(`Remark added for CC ${cc}`,'success');}}>+ Add</button>
+<button style={{padding:'8px 18px',fontSize:13,fontWeight:700,background:'#92640a',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',whiteSpace:'nowrap'}} onClick={async()=>{const cc=parseInt(remarkForm.cc,10);if(!cc||isNaN(cc)){addToast('Enter valid CC','error');return;}if(!remarkForm.remarks.trim()){addToast('Enter remarks','error');return;}try{const saved=await addGlobalRemark(cc,remarkForm.project.trim(),remarkForm.remarks.trim());setClientRemarks(p=>[...p,saved]);setRemarkForm({cc:'',project:'',remarks:''});addToast(`Remark saved for CC ${cc}`,'success');}catch(e){addToast('Save failed: '+e.message,'error');}}}>+ Add</button>
 </div>
 {/* Table */}
 <div style={card}><div style={{padding:'12px 16px',borderBottom:`1px solid ${S.g100}`,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+<div style={{display:'flex',alignItems:'center',gap:8}}>
 <span style={{fontSize:12,fontWeight:600,color:S.g500,letterSpacing:.5,textTransform:'uppercase'}}>Remarks ({clientRemarks.length})</span>
-<div style={{display:'flex',gap:8}}>
+{selectedRemarks.size>0&&<span style={{fontSize:11,fontWeight:600,color:S.danger,background:'#fef2f2',padding:'2px 8px',borderRadius:12}}>{selectedRemarks.size} selected</span>}
+</div>
+<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
 <input style={{...inp,width:160}} placeholder="Search..." value={remarkSearch} onChange={e=>setRemarkSearch(e.target.value)}/>
+{selectedRemarks.size>0&&<button style={{...eb,background:'#fef2f2',color:S.danger,borderColor:'#fca5a5',fontWeight:700}} onClick={async()=>{if(!confirm(`Delete ${selectedRemarks.size} selected remark(s)?`))return;let ok=0;for(const id of selectedRemarks){try{await deleteGlobalRemark(id);ok++;}catch(e){}}setClientRemarks(p=>p.filter(r=>!selectedRemarks.has(r.id)));setSelectedRemarks(new Set());addToast(`Deleted ${ok} remark(s)`,'info');}}>🗑 Delete Selected ({selectedRemarks.size})</button>}
 <button style={eb} onClick={()=>{const wb=window.XLSX.utils.book_new();const rows=[{'Cost Center':375994,'Project':'MM - Sample Project','Remarks':'Sample remark — replace or delete this row'},...clientRemarks.map(r=>({'Cost Center':r.cc,'Project':r.project,'Remarks':r.remarks}))];window.XLSX.utils.book_append_sheet(wb,window.XLSX.utils.json_to_sheet(rows),'Remarks');window.XLSX.writeFile(wb,'client_remarks_template.xlsx');}}>⬇ Download Template</button>
-<label style={{...eb,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}}><input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const reader=new FileReader();reader.onload=ev=>{try{const wb=window.XLSX.read(new Uint8Array(ev.target.result),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const data=window.XLSX.utils.sheet_to_json(ws,{defval:''});const imported=data.map(row=>{const cc=parseInt(row['Cost Center']||row['CC']||row['cost center']||row['cc']||0,10);return{cc,project:String(row['Project']||row['project']||row['Project Name']||''),remarks:String(row['Remarks']||row['remarks']||row['Comment']||row['Notes']||'')};}).filter(r=>r.cc>0&&r.remarks);setClientRemarks(p=>{const merged=[...p];imported.forEach(imp=>{const idx=merged.findIndex(m=>m.cc===imp.cc);if(idx>=0)merged[idx]=imp;else merged.push(imp);});return merged;});addToast(`Imported ${imported.length} remarks`,'success');}catch(err){addToast('Import error: '+err.message,'error');}};reader.readAsArrayBuffer(f);e.target.value='';}}/> ⬆ Import Excel</label>
+<label style={{...eb,cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}}><input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const reader=new FileReader();reader.onload=async ev=>{try{const wb=window.XLSX.read(new Uint8Array(ev.target.result),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const data=window.XLSX.utils.sheet_to_json(ws,{defval:''});const imported=data.map(row=>{const cc=parseInt(row['Cost Center']||row['CC']||row['cost center']||row['cc']||0,10);return{cc,project:String(row['Project']||row['project']||row['Project Name']||''),remarks:String(row['Remarks']||row['remarks']||row['Comment']||row['Notes']||'')};}).filter(r=>r.cc>0&&r.remarks);if(imported.length){try{await bulkInsertGlobalRemarks(imported);const fresh=await loadGlobalRemarks();setClientRemarks(fresh);addToast(`Imported ${imported.length} remarks to cloud`,'success');}catch(e2){addToast('Save error: '+e2.message,'error');}}}catch(err){addToast('Import error: '+err.message,'error');}};reader.readAsArrayBuffer(f);e.target.value='';}}/> ⬆ Import Excel</label>
 </div></div>
-<div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={th}>Cost Center</th><th style={th}>Project</th><th style={th}>Remarks</th><th style={{...th,width:40}}></th></tr></thead>
-<tbody>{clientRemarks.filter(r=>!remarkSearch||String(r.cc).includes(remarkSearch)||r.project.toLowerCase().includes(remarkSearch.toLowerCase())||r.remarks.toLowerCase().includes(remarkSearch.toLowerCase())).sort((a,b)=>a.cc-b.cc).map(r=><tr key={r.cc}><td style={{...td,fontWeight:600,fontFamily:S.mono,fontSize:13}}>{r.cc}</td><td style={{...td,fontSize:12,color:S.g700}}>{r.project||'—'}</td><td style={{...td,fontSize:12}}>{r.remarks}</td><td style={td}><button onClick={()=>setClientRemarks(p=>p.filter(x=>x.cc!==r.cc))} style={{background:'transparent',border:'none',color:S.g300,cursor:'pointer',fontSize:14,padding:'4px 8px',borderRadius:4}}>✕</button></td></tr>)}</tbody></table></div></div></div>}
+<div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={{...th,width:36}}><input type="checkbox" checked={clientRemarks.length>0&&selectedRemarks.size===clientRemarks.filter(r=>!remarkSearch||String(r.cc).includes(remarkSearch)||r.project.toLowerCase().includes(remarkSearch.toLowerCase())||r.remarks.toLowerCase().includes(remarkSearch.toLowerCase())).length} onChange={e=>{const filtered=clientRemarks.filter(r=>!remarkSearch||String(r.cc).includes(remarkSearch)||r.project.toLowerCase().includes(remarkSearch.toLowerCase())||r.remarks.toLowerCase().includes(remarkSearch.toLowerCase()));if(e.target.checked)setSelectedRemarks(new Set(filtered.map(r=>r.id)));else setSelectedRemarks(new Set());}} style={{cursor:'pointer'}}/></th><th style={th}>Cost Center</th><th style={th}>Project</th><th style={th}>Remarks</th><th style={{...th,width:40}}></th></tr></thead>
+<tbody>{(()=>{const filtered=clientRemarks.filter(r=>!remarkSearch||String(r.cc).includes(remarkSearch)||r.project.toLowerCase().includes(remarkSearch.toLowerCase())||r.remarks.toLowerCase().includes(remarkSearch.toLowerCase())).sort((a,b)=>a.cc-b.cc);return filtered.map(r=><tr key={r.id||r.cc} style={{background:selectedRemarks.has(r.id)?'#fef2f2':undefined}}><td style={{...td,textAlign:'center'}}><input type="checkbox" checked={selectedRemarks.has(r.id)} onChange={()=>setSelectedRemarks(p=>{const n=new Set(p);if(n.has(r.id))n.delete(r.id);else n.add(r.id);return n;})} style={{cursor:'pointer'}}/></td><td style={{...td,fontWeight:600,fontFamily:S.mono,fontSize:13}}>{r.cc}</td><td style={{...td,fontSize:12,color:S.g700}}>{r.project||'—'}</td><td style={{...td,fontSize:12}}>{r.remarks}</td><td style={td}><button onClick={async()=>{try{if(r.id)await deleteGlobalRemark(r.id);setClientRemarks(p=>p.filter(x=>x!==r));setSelectedRemarks(p=>{const n=new Set(p);n.delete(r.id);return n;});addToast('Deleted','info');}catch(e){addToast('Delete failed','error');}}} style={{background:'transparent',border:'none',color:S.g300,cursor:'pointer',fontSize:14,padding:'4px 8px',borderRadius:4}}>✕</button></td></tr>);})()}</tbody></table></div></div></div>}
+{/* CLOSED MONTHS */}{tab==='closed'&&<div style={{animation:'fadeIn .2s ease'}}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}><div style={{width:8,height:8,borderRadius:'50%',background:'#7c3aed'}}/><h2 style={{fontSize:16,fontWeight:700,margin:0}}>Closed / Approved Months</h2><span style={{fontSize:11,padding:'3px 10px',borderRadius:12,background:'#f3e8ff',color:'#7c3aed',fontWeight:600}}>☁ {savedMonthsList.length} month{savedMonthsList.length!==1?'s':''}</span></div>
+{savedMonthsList.length===0?<Empty icon="📋" text="No approved months yet."/>:
+<div style={card}><div style={{overflowX:'auto'}}><table style={{width:'100%'}}><thead><tr><th style={th}>Period</th><th style={th}>Approved On</th><th style={thR}>Cost Centers</th><th style={thR}>Total Closing (€)</th><th style={th}>Status</th><th style={th}>Actions</th></tr></thead>
+<tbody>{savedMonthsList.map(([k,v])=>{const ccCount=Object.keys(v.closingData||{}).length;const totalClosing=Object.values(v.closingData||{}).reduce((s,d)=>s+(d.finalizedClosing||0),0);const isCurrent=v.month===month&&v.year===year;return <tr key={k} style={{background:isCurrent?'#f7fce8':undefined}}>
+<td style={{...td,fontWeight:700,fontSize:14}}>{v.period}</td>
+<td style={{...td,fontSize:12,color:S.g500}}>{new Date(v.approvedAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}<br/><span style={{fontSize:10,color:S.g300}}>{new Date(v.approvedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span></td>
+<td style={{...tdn,fontSize:14}}>{ccCount}</td>
+<td style={{...tdn,fontWeight:700,fontSize:14,color:totalClosing>=0?S.success:S.danger}}>{fmt(totalClosing)}</td>
+<td style={td}>{isCurrent&&isApproved?editUnlocked?<span style={{fontSize:11,padding:'2px 8px',borderRadius:12,fontWeight:600,background:S.warnBg,color:S.warn}}>🔓 Editing</span>:<span style={{fontSize:11,padding:'2px 8px',borderRadius:12,fontWeight:600,background:S.successBg,color:S.success}}>🔒 Locked</span>:<span style={{fontSize:11,padding:'2px 8px',borderRadius:12,fontWeight:600,background:S.successBg,color:S.success}}>✓ Approved</span>}</td>
+<td style={td}><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+<button onClick={()=>{setMonth(v.month);setYear(v.year);addToast(`Switched to ${v.period}`,'info');setTab('inventory');}} style={{padding:'5px 12px',fontSize:11,fontWeight:600,background:S.infoBg,color:S.info,border:'1px solid #c0d8f5',borderRadius:4,cursor:'pointer'}}>👁 View</button>
+<button onClick={()=>{setMonth(v.month);setYear(v.year);setShowPasswordPrompt(true);}} style={{padding:'5px 12px',fontSize:11,fontWeight:600,background:S.warnBg,color:S.warn,border:'1px solid #f0d8a0',borderRadius:4,cursor:'pointer'}}>🔓 Unlock & Edit</button>
+<button onClick={async()=>{if(!confirm(`Delete approved ${v.period}? This cannot be undone.`))return;try{await deleteSavedMonth2(k);const sessKey=`session:${v.year}-${String(v.month).padStart(2,'0')}`;await deleteSession(sessKey);const sessions=await loadAllSessions();setAllSessions(sessions);addToast(`${v.period} deleted — you can redo this month`,'info');}catch(e){addToast('Delete failed','error');}}} style={{padding:'5px 12px',fontSize:11,fontWeight:600,background:'#fef2f2',color:S.danger,border:'1px solid #fca5a5',borderRadius:4,cursor:'pointer'}}>🗑 Delete & Redo</button>
+</div></td>
+</tr>;})}</tbody></table></div></div>}
+</div>}
 </div></div>);}
 
 // Render
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script>
+try{
+  var c=document.getElementById("appsrc").textContent;
+  var o=Babel.transform(c,{presets:["react"]}).code;
+  var s=document.createElement("script");
+  s.textContent=o;
+  document.body.appendChild(s);
+}catch(e){
+  document.getElementById("root").innerHTML="<div style=\"padding:40px;color:#c0392b;font-family:monospace\"><h2>Error</h2><pre>"+e.message+"</pre></div>";
+  console.error(e);
+}
 </script>
 </body>
 </html>
